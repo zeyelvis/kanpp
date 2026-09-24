@@ -3,7 +3,8 @@ import type { Db, RunResult, SqlValue, Statement } from "./types";
 interface D1HttpOptions {
   accountId: string;
   databaseId: string;
-  apiToken: string;
+  /** A fixed API token, or a getter for short-lived tokens that are refreshed elsewhere. */
+  apiToken: string | (() => string);
 }
 
 interface QueryResult<T> {
@@ -20,12 +21,13 @@ export function d1HttpDb({ accountId, databaseId, apiToken }: D1HttpOptions): Db
     for (let attempt = 0; ; attempt++) {
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${typeof apiToken === "function" ? apiToken() : apiToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const json = (await res.json()) as { success: boolean; result: QueryResult<T>[]; errors: unknown[] };
       if (res.ok && json.success) return json.result;
-      const retryable = res.status === 429 || res.status >= 500;
+      // 401/403 also retry: a short-lived OAuth token may have just been refreshed on disk.
+      const retryable = res.status === 429 || res.status >= 500 || ((res.status === 401 || res.status === 403) && typeof apiToken === "function");
       if (!retryable || attempt >= 3) {
         throw new Error(`D1 HTTP ${res.status}: ${JSON.stringify(json.errors)}`);
       }

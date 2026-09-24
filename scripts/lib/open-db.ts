@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -34,8 +35,13 @@ export function openDb(target: "local" | "remote"): Db {
   if (target === "local") return sqliteDb(localD1Path());
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const databaseId = process.env.D1_DATABASE_ID;
-  // CI passes a scoped API token; locally we reuse wrangler's login.
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN ?? wranglerOAuthToken();
-  if (!accountId || !databaseId || !apiToken) throw new Error("remote D1 needs CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID and an API token");
-  return d1HttpDb({ accountId, databaseId, apiToken });
+  if (!accountId || !databaseId) throw new Error("remote D1 needs CLOUDFLARE_ACCOUNT_ID and D1_DATABASE_ID");
+  // CI passes a scoped API token.
+  if (process.env.CLOUDFLARE_API_TOKEN) return d1HttpDb({ accountId, databaseId, apiToken: process.env.CLOUDFLARE_API_TOKEN });
+  // Locally we reuse wrangler's login. Its OAuth token lives ~1h, so long runs refresh it via
+  // wrangler every 20 minutes and re-read the file on every request.
+  if (!wranglerOAuthToken()) throw new Error("no CLOUDFLARE_API_TOKEN and no wrangler login");
+  const cwd = resolve(import.meta.dirname, "../..");
+  setInterval(() => execFile("npx", ["wrangler", "whoami"], { cwd }, () => undefined), 20 * 60 * 1000).unref();
+  return d1HttpDb({ accountId, databaseId, apiToken: () => wranglerOAuthToken() ?? "" });
 }
