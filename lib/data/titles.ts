@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import { cachedQuery, TAG } from "@/lib/data/cache";
 import { getDb } from "@/lib/db/server";
 import type { BrowseFilters } from "@/lib/domain/filters";
 import type { Kind } from "@/lib/domain/kinds";
@@ -87,30 +88,32 @@ const CARD_JOIN = "FROM titles t JOIN slugs s ON s.title_id = t.id AND s.is_cano
 
 export const PAGE_SIZE = 36;
 
-export async function latestByKind(kind: Kind | null, limit: number, offset = 0): Promise<TitleCard[]> {
-  const db = await getDb();
-  return db.all<TitleCard>(
+export function latestByKind(kind: Kind | null, limit: number, offset = 0): Promise<TitleCard[]> {
+  return cachedQuery(["latest", kind, limit, offset], [TAG.catalog], 900, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 ${kind ? "AND t.kind = ?" : ""}
      ORDER BY t.source_updated_at DESC, t.id DESC LIMIT ? OFFSET ?`,
     kind ? [kind, limit, offset] : [limit, offset],
-  );
+  ));
 }
 
-export async function popularByKind(kind: Kind, limit: number): Promise<TitleCard[]> {
-  const db = await getDb();
-  return db.all<TitleCard>(
+export function popularByKind(kind: Kind, limit: number): Promise<TitleCard[]> {
+  return cachedQuery(["popular", kind, limit], [TAG.catalog], 900, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.kind = ? ORDER BY t.popularity DESC LIMIT ?`,
     [kind, limit],
-  );
+  ));
 }
 
 /**
  * Filtered channel listing. Returns one extra row to signal "has next page" instead of
  * counting the filtered set.
  */
-export async function browseTitles(kind: Kind, f: BrowseFilters, limit: number, offset: number): Promise<{ titles: TitleCard[]; hasMore: boolean }> {
+export function browseTitles(kind: Kind, f: BrowseFilters, limit: number, offset: number): Promise<{ titles: TitleCard[]; hasMore: boolean }> {
+  return cachedQuery(["browse", kind, f.genre, f.region, f.year, f.sort, limit, offset], [TAG.catalog], 900, () => browseQuery(kind, f, limit, offset));
+}
+
+async function browseQuery(kind: Kind, f: BrowseFilters, limit: number, offset: number): Promise<{ titles: TitleCard[]; hasMore: boolean }> {
   const db = await getDb();
   const where = ["t.indexable = 1", "t.kind = ?"];
   const params: (string | number)[] = [kind];
@@ -146,13 +149,13 @@ export interface FollowCard extends TitleCard {
 }
 
 /** Cards for a list of ids (followed titles). D1 caps bound parameters at 100. */
-export async function titlesByIds(ids: number[]): Promise<FollowCard[]> {
-  const db = await getDb();
-  return db.all<FollowCard>(
+export function titlesByIds(ids: number[]): Promise<FollowCard[]> {
+  const list = [...new Set(ids)].sort((a, b) => a - b).slice(0, 90);
+  return cachedQuery(["byIds", list.join(",")], [TAG.catalog], 600, async () => (await getDb()).all<FollowCard>(
     `SELECT ${CARD_COLUMNS}, t.next_episode_date, t.next_episode_number, t.next_episode_season, t.tv_status ${CARD_JOIN}
-     WHERE t.id IN (${ids.map(() => "?").join(",")}) AND t.status = 'active'`,
-    ids.slice(0, 90),
-  );
+     WHERE t.id IN (${list.map(() => "?").join(",")}) AND t.status = 'active'`,
+    list,
+  ));
 }
 
 export interface FeaturedCard extends TitleCard {
@@ -163,25 +166,23 @@ export interface FeaturedCard extends TitleCard {
 }
 
 /** Hero slides: popular titles with a backdrop that got new episodes/lines recently. */
-export async function featuredTitles(limit: number): Promise<FeaturedCard[]> {
-  const db = await getDb();
-  return db.all<FeaturedCard>(
+export function featuredTitles(limit: number): Promise<FeaturedCard[]> {
+  return cachedQuery(["featured", limit], [TAG.catalog], 900, async () => (await getDb()).all<FeaturedCard>(
     `SELECT ${CARD_COLUMNS}, t.backdrop_path, t.overview, t.genres, t.tmdb_type ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.backdrop_path IS NOT NULL AND t.source_updated_at >= datetime('now', '-10 days')
      ORDER BY t.popularity DESC LIMIT ?`,
     [limit],
-  );
+  ));
 }
 
 /** Well-rated titles with enough votes to mean something. */
-export async function topRated(limit: number): Promise<TitleCard[]> {
-  const db = await getDb();
-  return db.all<TitleCard>(
+export function topRated(limit: number): Promise<TitleCard[]> {
+  return cachedQuery(["topRated", limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.vote_count >= 200 AND t.vote_average >= 7.5
      ORDER BY t.vote_average DESC, t.vote_count DESC LIMIT ?`,
     [limit],
-  );
+  ));
 }
 
 export interface UpcomingCard extends TitleCard {
@@ -191,7 +192,11 @@ export interface UpcomingCard extends TitleCard {
 }
 
 /** Series with an episode airing in the next `days` days (the 追剧 calendar). */
-export async function upcomingEpisodes(days: number, limit: number): Promise<UpcomingCard[]> {
+export function upcomingEpisodes(days: number, limit: number): Promise<UpcomingCard[]> {
+  return cachedQuery(["upcoming", days, limit], [TAG.catalog], 900, () => upcomingQuery(days, limit));
+}
+
+async function upcomingQuery(days: number, limit: number): Promise<UpcomingCard[]> {
   const db = await getDb();
   const rows = await db.all<UpcomingCard>(
     `SELECT ${CARD_COLUMNS}, t.next_episode_date, t.next_episode_season, t.next_episode_number ${CARD_JOIN}
@@ -203,19 +208,22 @@ export async function upcomingEpisodes(days: number, limit: number): Promise<Upc
 }
 
 /** Same kind, sharing the first genre; the internal-link rail on title pages. */
-export async function relatedTitles(t: { id: number; kind: Kind; genres: string[] }, limit: number): Promise<TitleCard[]> {
-  const db = await getDb();
-  const genre = t.genres[0];
-  return db.all<TitleCard>(
+export function relatedTitles(t: { id: number; kind: Kind; genres: string[] }, limit: number): Promise<TitleCard[]> {
+  const genre = t.genres[0] ?? null;
+  return cachedQuery(["related", t.id, t.kind, genre, limit], [TAG.related], 86400, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.kind = ? AND t.id <> ? ${genre ? "AND t.genres LIKE ?" : ""}
      ORDER BY t.popularity DESC LIMIT ?`,
     genre ? [t.kind, t.id, `%"${genre}"%`, limit] : [t.kind, t.id, limit],
-  );
+  ));
 }
 
 /** Catalog sizes precomputed by the ingest run (falls back to counting if never stored). */
-async function storedCount(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
+function storedCount(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
+  return cachedQuery(["count", key], [TAG.catalog], 900, () => countQuery(key, fallbackSql, params));
+}
+
+async function countQuery(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
   const db = await getDb();
   const stored = await db.first<{ value: string }>("SELECT value FROM sync_state WHERE key = ?", [`count:${key}`]);
   if (stored) return Number(stored.value);
@@ -228,8 +236,9 @@ export function countByKind(kind: Kind): Promise<number> {
 
 /** Slug lookup. Returns the title plus whether this slug is its canonical one. */
 export const resolveSlug = cache(async (slug: string): Promise<{ title: TitleDetail; canonicalSlug: string; isCanonical: boolean } | null> => {
-  const db = await getDb();
-  const hit = await db.first<{ title_id: number; is_canonical: number }>("SELECT title_id, is_canonical FROM slugs WHERE slug = ?", [slug]);
+  const hit = await cachedQuery(["slug", slug], [TAG.slugs], 86400, async () =>
+    (await getDb()).first<{ title_id: number; is_canonical: number }>("SELECT title_id, is_canonical FROM slugs WHERE slug = ?", [slug]),
+  );
   if (!hit) return null;
   const title = await getTitle(hit.title_id);
   if (!title) return null;
@@ -237,8 +246,9 @@ export const resolveSlug = cache(async (slug: string): Promise<{ title: TitleDet
 });
 
 export const getTitle = cache(async (id: number): Promise<TitleDetail | null> => {
-  const db = await getDb();
-  const row = await db.first<Record<string, unknown>>(`SELECT t.*, s.slug ${CARD_JOIN} WHERE t.id = ?`, [id]);
+  const row = await cachedQuery(["title", id], [TAG.title(id)], 3600, async () =>
+    (await getDb()).first<Record<string, unknown>>(`SELECT t.*, s.slug ${CARD_JOIN} WHERE t.id = ?`, [id]),
+  );
   if (!row) return null;
   const json = <T,>(v: unknown): T => JSON.parse((v as string) || "[]") as T;
   return {
@@ -251,24 +261,26 @@ export const getTitle = cache(async (id: number): Promise<TitleDetail | null> =>
   };
 });
 
-export const getSeasons = cache(async (titleId: number): Promise<Season[]> => {
-  const db = await getDb();
-  return db.all<Season>(
-    "SELECT season_number, name, overview, air_date, episode_count, poster_path FROM seasons WHERE title_id = ? ORDER BY season_number",
-    [titleId],
-  );
-});
+export const getSeasons = cache((titleId: number): Promise<Season[]> =>
+  cachedQuery(["seasons", titleId], [TAG.title(titleId)], 3600, async () =>
+    (await getDb()).all<Season>(
+      "SELECT season_number, name, overview, air_date, episode_count, poster_path FROM seasons WHERE title_id = ? ORDER BY season_number",
+      [titleId],
+    ),
+  ),
+);
 
 /**
  * Playable lines for a title, in source priority order. Series rows without a season
  * marker belong to season 1.
  */
 export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"): Promise<Line[]> => {
-  const db = await getDb();
-  const rows = await db.all<{ source_id: string; season_number: number | null; remarks: string | null; vod_time: string | null; play_from: string | null; play_url: string | null }>(
-    `SELECT source_id, season_number, remarks, vod_time, play_from, play_url FROM source_items
-     WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0`,
-    [titleId],
+  const rows = await cachedQuery(["lines", titleId], [TAG.title(titleId)], 1800, async () =>
+    (await getDb()).all<{ source_id: string; season_number: number | null; remarks: string | null; vod_time: string | null; play_from: string | null; play_url: string | null }>(
+      `SELECT source_id, season_number, remarks, vod_time, play_from, play_url FROM source_items
+       WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0`,
+      [titleId],
+    ),
   );
   return rows
     .filter((r) => getSource(r.source_id)) // retired sources are not offered as lines
@@ -290,14 +302,14 @@ export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"):
 export async function searchTitles(query: string, limit = 48): Promise<TitleCard[]> {
   const key = normalizeKey(query);
   if (!key) return [];
-  const db = await getDb();
+  const q = query.trim();
   // Prefix range on the alias index: exact and "starts with" hits, both scripts.
-  return db.all<TitleCard>(
+  return cachedQuery(["search", key, q, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.id IN (SELECT title_id FROM aliases WHERE norm >= ? AND norm < ?)
      ORDER BY (t.name = ?) DESC, t.popularity DESC LIMIT ?`,
-    [key, `${key}\u{10FFFF}`, query.trim(), limit],
-  );
+    [key, `${key}\u{10FFFF}`, q, limit],
+  ));
 }
 
 export interface SitemapEntry {
@@ -307,13 +319,12 @@ export interface SitemapEntry {
   source_updated_at: string | null;
 }
 
-export async function sitemapTitles(offset: number, limit: number): Promise<SitemapEntry[]> {
-  const db = await getDb();
-  return db.all<SitemapEntry>(
+export function sitemapTitles(offset: number, limit: number): Promise<SitemapEntry[]> {
+  return cachedQuery(["sitemap", offset, limit], [TAG.catalog], 3600, async () => (await getDb()).all<SitemapEntry>(
     `SELECT t.kind, s.slug, t.updated_at, t.source_updated_at ${CARD_JOIN}
      WHERE t.indexable = 1 ORDER BY t.id LIMIT ? OFFSET ?`,
     [limit, offset],
-  );
+  ));
 }
 
 export function countIndexable(): Promise<number> {

@@ -9,7 +9,12 @@ import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { seasonPath, titlePath, watchPath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
-export const dynamic = "force-dynamic";
+// Rendered on first request, then served from the edge cache (ISR). Ingest invalidates the
+// title's tag after changes; nothing is prerendered at build time (the build has no D1).
+export const revalidate = 3600;
+export async function generateStaticParams() {
+  return [];
+}
 
 function parseSeason(segment: string): number | null {
   const m = segment.match(/^s([1-9]\d?)$/);

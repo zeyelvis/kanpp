@@ -17,7 +17,12 @@ import { seasonPath, titlePath, watchPath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 import { describeTitle, pageTitle, titleJsonLd } from "@/lib/seo/title";
 
-export const dynamic = "force-dynamic";
+// Rendered on first request, then served from the edge cache (ISR). Ingest invalidates the
+// title's tag after changes; nothing is prerendered at build time (the build has no D1).
+export const revalidate = 3600;
+export async function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({ params }: PageProps<"/[kind]/[slug]">): Promise<Metadata> {
   const t = await lookupTitleForMetadata(await params);

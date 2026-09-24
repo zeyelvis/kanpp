@@ -1,16 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { permanentRedirect } from "next/navigation";
 import { Player } from "@/components/player/Player";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons } from "@/lib/data/titles";
-import { titlePath } from "@/lib/domain/slug";
+import { parseWatchState, titlePath, watchFragment } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
-
-function one(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
 
 export async function generateMetadata({ params }: PageProps<"/watch/[kind]/[slug]">): Promise<Metadata> {
   const t = await lookupTitleForMetadata(await params);
@@ -26,18 +23,14 @@ export async function generateMetadata({ params }: PageProps<"/watch/[kind]/[slu
 export default async function WatchPage({ params, searchParams }: PageProps<"/watch/[kind]/[slug]">) {
   const q = await searchParams;
   const query = new URLSearchParams();
-  for (const k of ["s", "ep", "line"] as const) {
-    const v = one(q[k]);
-    if (v) query.set(k, v);
-  }
-  const qs = query.toString() ? `?${query}` : "";
-  const t = await resolveTitleRoute(await params, (canonical) => `/watch${canonical}${qs}`);
-  const [lines, seasons] = await Promise.all([getLines(t.id, t.tmdb_type), getSeasons(t.id)]);
+  for (const [k, v] of Object.entries(q)) for (const x of v === undefined ? [] : Array.isArray(v) ? v : [v]) query.append(k, x);
+  // Old links carried the selection in the query string; it now lives in the fragment.
+  const fragment = watchFragment(parseWatchState(query));
+  const t = await resolveTitleRoute(await params, (canonical) => `/watch${canonical}${fragment}`);
+  if ([...query.keys()].length > 0) permanentRedirect(`/watch${titlePath(t.kind, t.slug)}${fragment}`);
 
+  const [lines, seasons] = await Promise.all([getLines(t.id, t.tmdb_type), getSeasons(t.id)]);
   const seasonNumbers = [...new Set(lines.map((l) => l.season).filter((s): s is number => s != null))].sort((a, b) => a - b);
-  const requestedSeason = Number(one(q.s));
-  const season = t.tmdb_type === "tv" ? (seasonNumbers.includes(requestedSeason) ? requestedSeason : seasonNumbers.at(-1) ?? null) : null;
-  const ep = Math.max(1, Number(one(q.ep)) || 1);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-3 sm:pt-6">
@@ -55,7 +48,7 @@ export default async function WatchPage({ params, searchParams }: PageProps<"/wa
         backdrop={tmdbImage(t.backdrop_path, "w1280")}
         lines={lines}
         seasons={seasonNumbers.map((n) => ({ number: n, name: seasons.find((s) => s.season_number === n)?.name ?? `第${n}季` }))}
-        initial={{ season, ep, line: one(q.line) ?? null }}
+        defaultSeason={t.tmdb_type === "tv" ? (seasonNumbers.at(-1) ?? null) : null}
       />
       {t.overview ? (
         <section className="mt-8 max-w-3xl">

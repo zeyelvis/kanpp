@@ -4,7 +4,10 @@ import { KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
 import { titlePath } from "@/lib/domain/slug";
 import { lastModified, TITLES_PER_SITEMAP, urlset, XML_HEADERS } from "@/lib/seo/sitemap";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
+export async function generateStaticParams() {
+  return [];
+}
 
 export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) {
   const { file } = await ctx.params;

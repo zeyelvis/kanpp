@@ -1,9 +1,10 @@
 "use client";
 
 import type Hls from "hls.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FollowButton } from "@/components/library/FollowButton";
 import { formatClock, lastWatched, recordHistory, useHistory, type TitleRef } from "@/lib/client/library";
+import { parseWatchState, watchFragment, type WatchState } from "@/lib/domain/slug";
 import { hlsConfig, isMobileClient } from "./hls-config";
 
 export interface PlayerLine {
@@ -20,7 +21,26 @@ interface Props {
   backdrop: string | null;
   lines: PlayerLine[];
   seasons: { number: number; name: string }[];
-  initial: { season: number | null; ep: number; line: string | null };
+  /** Season shown when the URL fragment does not pick one (newest season with lines). */
+  defaultSeason: number | null;
+}
+
+// The selected season/episode/line live in the URL fragment (one crawlable URL per title).
+// replaceState does not fire hashchange, so writes notify subscribers themselves.
+const hashListeners = new Set<() => void>();
+function subscribeHash(listener: () => void) {
+  hashListeners.add(listener);
+  window.addEventListener("hashchange", listener);
+  window.addEventListener("popstate", listener);
+  return () => {
+    hashListeners.delete(listener);
+    window.removeEventListener("hashchange", listener);
+    window.removeEventListener("popstate", listener);
+  };
+}
+function writeHash(state: WatchState) {
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${watchFragment(state)}`);
+  hashListeners.forEach((l) => l());
 }
 
 const RANGE = 50;
@@ -70,16 +90,30 @@ function EpisodeGrid({ episodes, current, onPick }: { episodes: { name: string }
   );
 }
 
-export function Player({ title, backdrop, lines, seasons, initial }: Props) {
+export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const resumeAt = useRef<number | null>(null);
 
-  const [season, setSeason] = useState<number | null>(initial.season ?? lines[0]?.season ?? null);
+  // Server render has no fragment: it shows the default season, episode 1, first line.
+  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
+  const wanted = parseWatchState(hash);
+  const seasonNumbers = new Set(lines.map((l) => l.season));
+  const season = wanted.season != null && seasonNumbers.has(wanted.season) ? wanted.season : defaultSeason;
   const seasonLines = useMemo(() => lines.filter((l) => l.season === season), [lines, season]);
-  const [lineId, setLineId] = useState<string | null>(initial.line);
+  const lineId = wanted.line;
   const line = seasonLines.find((l) => l.sourceId === lineId) ?? seasonLines[0];
-  const [ep, setEp] = useState(Math.max(0, initial.ep - 1));
+  const ep = Math.max(0, (wanted.ep ?? 1) - 1);
+  const select = useCallback(
+    (patch: WatchState) => {
+      const current = parseWatchState(window.location.hash);
+      writeHash({ season: current.season ?? season, ep: current.ep, line: current.line, ...patch });
+    },
+    [season],
+  );
+  const setSeason = (s: number | null) => select({ season: s, ep: 1, line: null });
+  const setLineId = (id: string | null) => select({ line: id });
+  const setEp = (i: number) => select({ ep: i + 1 });
   const [failed, setFailed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,16 +151,6 @@ export function Player({ title, backdrop, lines, seasons, initial }: Props) {
     });
   }, [title, season, epIndex, episode]);
 
-  // Keep the address bar shareable without adding history entries.
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    if (season) q.set("s", String(season));
-    else q.delete("s");
-    q.set("ep", String(epIndex + 1));
-    if (line) q.set("line", line.sourceId);
-    window.history.replaceState(null, "", `${window.location.pathname}?${q}`);
-  }, [season, epIndex, line]);
-
   /** Move to the next line that has this episode. The only recovery we do: no proxying,
    * no seeking to "unstick" playback. */
   const failover = useCallback(
@@ -138,14 +162,14 @@ export function Player({ title, backdrop, lines, seasons, initial }: Props) {
       const t = videoRef.current?.currentTime ?? 0;
       if (next) {
         resumeAt.current = t > 5 ? t : resumeAt.current;
-        setLineId(next.sourceId);
+        select({ line: next.sourceId });
         setError(null);
       } else {
         setError(`所有线路都无法播放（${reason}），请稍后再试。`);
         setLoading(false);
       }
     },
-    [failed, line, seasonLines, epIndex],
+    [failed, line, seasonLines, epIndex, select],
   );
 
   useEffect(() => {
@@ -237,9 +261,9 @@ export function Player({ title, backdrop, lines, seasons, initial }: Props) {
       resumeAt.current = null;
       setResumeDismissed(true);
       setCountdown(null);
-      setEp(i);
+      select({ ep: i + 1 });
     },
-    [saveProgress],
+    [saveProgress, select],
   );
 
   // Auto-play the next episode after a short, cancellable countdown.

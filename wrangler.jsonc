@@ -27,6 +27,34 @@
       "database_name": "kanpp-db",
       "database_id": "1142d043-d0ee-4d0d-9574-9a980f44568a",
       "migrations_dir": "migrations"
+    },
+    // OpenNext tag cache (revalidateTag/Path timestamps). Kept apart from the catalog.
+    {
+      "binding": "NEXT_TAG_CACHE_D1",
+      "database_name": "kanpp-next-tags",
+      "database_id": "dc68b291-279b-49b2-810b-f26094137632"
+    }
+  ],
+  // OpenNext incremental cache: ISR pages and unstable_cache entries.
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "kanpp-next-cache"
+    }
+  ],
+  // OpenNext queue for time-based (ISR) revalidation.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NEXT_CACHE_DO_QUEUE",
+        "class_name": "DOQueueHandler"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DOQueueHandler"]
     }
   ],
   "observability": {

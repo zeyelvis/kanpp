@@ -19,6 +19,7 @@ import { fetchCmsPage } from "@/lib/sources/cms";
 import { SOURCES, type CmsSource } from "@/lib/sources/registry";
 import { TmdbClient } from "@/lib/tmdb/client";
 import { loadEnv, openDb } from "./lib/open-db";
+import { notifySite } from "./lib/revalidate";
 
 loadEnv();
 
@@ -60,6 +61,7 @@ async function main() {
   const db = openDb(target);
   const tmdb = new TmdbClient(process.env.TMDB_API_KEY ?? "");
   const touched = new Set<number>();
+  let created = false;
   const selected = args.sources ? SOURCES.filter((s) => args.sources!.split(",").includes(s.id)) : SOURCES;
   log(`db=${target} sources=${selected.map((s) => s.id).join(",")}`);
 
@@ -99,6 +101,7 @@ async function main() {
     });
     log(`resolve done: ${JSON.stringify({ ...stats, touchedTitleIds: stats.touchedTitleIds.size })}`);
     stats.touchedTitleIds.forEach((id) => touched.add(id));
+    created = stats.created > 0;
   }
 
   if (args["refresh-series"]) {
@@ -110,6 +113,10 @@ async function main() {
   const published = await refreshTitles(db, touched);
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
+
+  if (target === "remote") {
+    log(`revalidate: ${await notifySite({ titleIds: [...touched], created, catalog: true })}`);
+  }
 }
 
 main().catch((err) => {

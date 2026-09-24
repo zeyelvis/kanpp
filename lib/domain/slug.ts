@@ -34,14 +34,38 @@ export function seasonPath(kind: Kind, slug: string, season: number): string {
   return `${titlePath(kind, slug)}/s${season}`;
 }
 
-/** Player URL. `ep` is 1-based; `line` is a source id. */
-export function watchPath(kind: Kind, slug: string, opts: { season?: number | null; ep?: number; line?: string } = {}): string {
+export interface WatchState {
+  season?: number | null;
+  /** 1-based episode number */
+  ep?: number | null;
+  /** source id */
+  line?: string | null;
+}
+
+/** "#s=1&ep=3&line=ikun" (empty when nothing is selected). */
+export function watchFragment(state: WatchState): string {
   const q = new URLSearchParams();
-  if (opts.season) q.set("s", String(opts.season));
-  if (opts.ep) q.set("ep", String(opts.ep));
-  if (opts.line) q.set("line", opts.line);
-  const qs = q.toString();
-  return `/watch/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}${qs ? `?${qs}` : ""}`;
+  if (state.season) q.set("s", String(state.season));
+  if (state.ep) q.set("ep", String(state.ep));
+  if (state.line) q.set("line", state.line);
+  const s = q.toString();
+  return s ? `#${s}` : "";
+}
+
+/** Reads a fragment (or query string) written by watchFragment; invalid values are dropped. */
+export function parseWatchState(raw: string | URLSearchParams): WatchState {
+  const q = typeof raw === "string" ? new URLSearchParams(raw.replace(/^[#?]/, "")) : raw;
+  const num = (v: string | null) => (v && /^[1-9]\d{0,3}$/.test(v) ? Number(v) : null);
+  const line = q.get("line");
+  return { season: num(q.get("s")), ep: num(q.get("ep")), line: line && /^[a-z0-9_]{1,20}$/.test(line) ? line : null };
+}
+
+/**
+ * Player URL. There is exactly one crawlable URL per title; season/episode/line live in the
+ * fragment, which crawlers ignore, so episodes x lines no longer multiply into thousands of URLs.
+ */
+export function watchPath(kind: Kind, slug: string, state: WatchState = {}): string {
+  return `/watch/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}${watchFragment(state)}`;
 }
 
 /**
