@@ -150,6 +150,16 @@ async function main() {
     await checkRedirect(`/${other}/${slug}`, probe);
     await checkRedirect(`/${segment}/${encodeURIComponent(slug)}`, probe); // double-encoded
   }
+  // Production only: www must 308 to the apex, root included.
+  const baseUrl = new URL(BASE);
+  if (!baseUrl.hostname.startsWith("www.") && baseUrl.hostname.split(".").length === 2 && baseUrl.protocol === "https:") {
+    for (const p of ["/", "/tv"]) {
+      const res = await fetch(`https://www.${baseUrl.hostname}${p}`, { redirect: "manual", headers: { "User-Agent": UA } }).catch(() => null);
+      const loc = res?.headers.get("location");
+      if (!res || res.status !== 308 || loc !== `${BASE}${p}`) fail(`www${p}`, "www-redirect", `${res?.status ?? "no response"} -> ${loc}`);
+    }
+  }
+
   const missing = await get("/movie/this-title-does-not-exist-1900");
   if (missing.status !== 404) fail("/movie/this-title-does-not-exist-1900", "404", `got ${missing.status}`);
 

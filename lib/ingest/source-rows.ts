@@ -1,7 +1,7 @@
 import type { Db, SqlValue, Statement } from "@/lib/db/types";
 import { cleanDoubanId, cleanYear, type CmsItem } from "@/lib/sources/cms";
 import { classifyCategory } from "@/lib/sources/categories";
-import { pickHlsEpisodes } from "@/lib/sources/playurl";
+import { pickHlsGroup, serializeGroup } from "@/lib/sources/playurl";
 
 export type SkipReason = "category-blocked" | "category-unknown" | "no-name";
 
@@ -19,7 +19,10 @@ export function prepareSourceRow(sourceId: string, item: CmsItem): PreparedRow |
   if (category === undefined) return { skip: "category-unknown" };
 
   const vodId = String(item.vod_id);
-  const episodes = pickHlsEpisodes(item.vod_play_from, item.vod_play_url);
+  // Only the directly playable HLS group is kept: it is all the player uses, and it keeps
+  // rows well under D1's size limits for long-running series.
+  const group = pickHlsGroup(item.vod_play_from, item.vod_play_url);
+  const play = group ? serializeGroup(group) : null;
   return {
     vodId,
     params: [
@@ -37,9 +40,9 @@ export function prepareSourceRow(sourceId: string, item: CmsItem): PreparedRow |
       item.vod_pic?.trim() || null,
       item.vod_actor?.trim() || null,
       item.vod_director?.trim() || null,
-      item.vod_play_from ?? null,
-      item.vod_play_url ?? null,
-      episodes.length,
+      play?.playFrom ?? null,
+      play?.playUrl ?? null,
+      group?.episodes.length ?? 0,
     ],
   };
 }

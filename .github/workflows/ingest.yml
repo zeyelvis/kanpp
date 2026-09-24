@@ -1,0 +1,40 @@
+name: Ingest
+
+on:
+  schedule:
+    - cron: "17 */4 * * *" # every 4 hours
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "Extra arguments for scripts/ingest.ts"
+        required: false
+        default: ""
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    # Off until the Cloudflare API token secret exists (set the repo variable to "true").
+    if: vars.AUTOMATION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      EXTRA_ARGS: ${{ github.event.inputs.args }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # New rows from the last 5h (overlapping the 4h schedule), 5 more catalog pages per
+      # source, and a TMDB refresh of airing series. Ends with the publish gate.
+      - run: >-
+          npx tsx scripts/ingest.ts --db=remote --hours=5 --backfill=5
+          --refresh-series=300 --limit=2000 --concurrency=8 $EXTRA_ARGS

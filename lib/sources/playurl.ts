@@ -30,11 +30,20 @@ export function parsePlayGroups(playFrom: string | null | undefined, playUrl: st
   }));
 }
 
-/** HLS group our player can play directly (web-player share pages are skipped). */
-export function pickHlsEpisodes(playFrom: string | null | undefined, playUrl: string | null | undefined): Episode[] {
+/** The HLS group our player can play directly (web-player share pages are skipped). */
+export function pickHlsGroup(playFrom: string | null | undefined, playUrl: string | null | undefined): PlayGroup | null {
   const groups = parsePlayGroups(playFrom, playUrl);
   const hls = groups.filter((g) => g.episodes.length > 0 && g.episodes.every((e) => /\.m3u8(\?|$)/i.test(e.url)));
-  if (hls.length === 0) return [];
+  if (hls.length === 0) return null;
   // Prefer the group with the most episodes; ties go to the first (the source's default).
-  return hls.reduce((best, g) => (g.episodes.length > best.episodes.length ? g : best)).episodes;
+  return hls.reduce((best, g) => (g.episodes.length > best.episodes.length ? g : best));
+}
+
+export function pickHlsEpisodes(playFrom: string | null | undefined, playUrl: string | null | undefined): Episode[] {
+  return pickHlsGroup(playFrom, playUrl)?.episodes ?? [];
+}
+
+/** Serializes one group back to the CMS format, so only playable data is stored. */
+export function serializeGroup(group: PlayGroup): { playFrom: string; playUrl: string } {
+  return { playFrom: group.from, playUrl: group.episodes.map((e) => `${e.name}$${e.url}`).join("#") };
 }

@@ -1,0 +1,20 @@
+name: SEO watch
+
+on:
+  schedule:
+    - cron: "40 1 * * *" # daily
+  workflow_dispatch:
+
+jobs:
+  seo-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # A failing run means production drifted from the SEO contract; GitHub emails the owner.
+      - run: npx tsx scripts/seo-check.ts --base=https://kanpp.tv --sample=200

@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
     // Posters come straight from the TMDB CDN at pre-sized widths; no optimizer needed.
     unoptimized: true,
   },
+  async redirects() {
+    const www = [{ type: "host" as const, value: "www.kanpp.tv" }];
+    return [
+      // The root needs its own rule: an empty wildcard match is left unexpanded in the target.
+      { source: "/", has: www, destination: "https://kanpp.tv/", permanent: true },
+      { source: "/:path+", has: www, destination: "https://kanpp.tv/:path+", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

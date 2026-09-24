@@ -6,7 +6,7 @@ import { extractSeason, parseChineseNumber } from "@/lib/domain/season";
 import { baseSlug, decodeSlugParam, isOverEncoded, titlePath } from "@/lib/domain/slug";
 import { isNextEpisodeAhead, latestEpisodeNumber } from "@/lib/domain/labels";
 import { classifyCategory } from "@/lib/sources/categories";
-import { parsePlayGroups, pickHlsEpisodes } from "@/lib/sources/playurl";
+import { parsePlayGroups, pickHlsEpisodes, pickHlsGroup, serializeGroup } from "@/lib/sources/playurl";
 
 describe("normalizeKey", () => {
   it("strips release annotations but keeps the title", () => {
@@ -191,5 +191,14 @@ describe("next-episode freshness", () => {
     expect(isNextEpisodeAhead(base, "2026-09-24")).toBe(false);
     expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-24")).toBe(true);
     expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-25")).toBe(false); // in the past
+  });
+});
+
+describe("stored play data", () => {
+  it("round-trips the chosen HLS group", () => {
+    const group = pickHlsGroup("web$$$m3u8", "第1集$https://a.com/p/1#第2集$https://a.com/p/2$$$第1集$https://a.com/1.m3u8#第2集$https://a.com/2.m3u8")!;
+    const { playFrom, playUrl } = serializeGroup(group);
+    expect(playFrom).toBe("m3u8");
+    expect(pickHlsEpisodes(playFrom, playUrl)).toEqual(group.episodes);
   });
 });
