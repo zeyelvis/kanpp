@@ -20,6 +20,9 @@ export function SiteHeader() {
               {KIND_LABEL[kind]}
             </Link>
           ))}
+          <Link href="/schedule" className="shrink-0 rounded-md px-3 py-1.5 text-sm text-accent transition hover:bg-surface-2">
+            追剧日历
+          </Link>
         </nav>
         <form action="/search" method="get" role="search" className="hidden sm:block">
           <input

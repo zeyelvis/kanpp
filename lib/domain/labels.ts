@@ -46,6 +46,8 @@ export function isNextEpisodeAhead(
   today = new Date().toISOString().slice(0, 10),
 ): boolean {
   if (!t.next_episode_date || t.next_episode_date < today) return false;
+  // Sources already call it finished ("完结", "全40集", "40集全"): nothing is upcoming.
+  if (t.latest_label && /完结|全集|全\d+集|\d+集全/.test(t.latest_label)) return false;
   const have = latestEpisodeNumber(t.latest_label);
   return !(have != null && t.next_episode_number != null && t.next_episode_number <= have);
 }

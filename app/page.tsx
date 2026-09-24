@@ -37,7 +37,7 @@ export default async function HomePage() {
       </section>
 
       {upcoming.length > 0 ? (
-        <Rail title="本周待播" id="upcoming">
+        <Rail title="本周待播" id="upcoming" href="/schedule">
           <ul className="scrollbar-none -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
             {upcoming.map((t) => (
               <li key={t.id} className="w-64 shrink-0">

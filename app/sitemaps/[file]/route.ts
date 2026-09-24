@@ -10,7 +10,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) 
   const { file } = await ctx.params;
 
   if (file === "pages.xml") {
-    const locs = ["/", ...KINDS.map((k) => `/${KIND_SEGMENT[k]}`)].map((p) => ({ loc: absoluteUrl(p) }));
+    const locs = ["/", "/schedule", ...KINDS.map((k) => `/${KIND_SEGMENT[k]}`)].map((p) => ({ loc: absoluteUrl(p) }));
     return new Response(urlset(locs), { headers: XML_HEADERS });
   }
 

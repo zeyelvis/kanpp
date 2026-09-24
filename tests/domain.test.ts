@@ -191,6 +191,8 @@ describe("next-episode freshness", () => {
     expect(isNextEpisodeAhead(base, "2026-09-24")).toBe(false);
     expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-24")).toBe(true);
     expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-25")).toBe(false); // in the past
+    expect(isNextEpisodeAhead({ ...base, next_episode_number: 1, latest_label: "完结" }, "2026-09-24")).toBe(false);
+    expect(isNextEpisodeAhead({ ...base, next_episode_number: 41, latest_label: "40集全" }, "2026-09-24")).toBe(false);
   });
 });
 

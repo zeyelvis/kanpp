@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Local fallback scheduler. Install: cp ops/tv.kanpp.ingest.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/tv.kanpp.ingest.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>tv.kanpp.ingest</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/zeyelvis/kanpp/ops/run-ingest.sh</string></array>
+  <key>StartInterval</key><integer>14400</integer>
+  <key>StandardOutPath</key><string>/Users/zeyelvis/Library/Logs/kanpp-ingest.log</string>
+  <key>StandardErrorPath</key><string>/Users/zeyelvis/Library/Logs/kanpp-ingest.log</string>
+</dict>
+</plist>
