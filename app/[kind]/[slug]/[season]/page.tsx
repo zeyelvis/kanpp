@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { EpisodeLinks } from "@/components/EpisodeLinks";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons, type Season, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
@@ -94,20 +95,9 @@ export default async function SeasonPage({ params }: PageProps<"/[kind]/[slug]/[
       {seasonLines[0] && seasonLines[0].episodes.length > 0 ? (
         <section aria-labelledby="episodes" className="pt-10">
           <h2 id="episodes" className="mb-4 text-xl font-semibold">
-            分集
+            分集 <span className="text-sm font-normal text-muted">共{seasonLines[0].episodes.length}集</span>
           </h2>
-          <ol className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
-            {seasonLines[0].episodes.map((e, i) => (
-              <li key={`${e.url}-${i}`}>
-                <Link
-                  href={watchPath(t.kind, t.slug, { season: n, ep: i + 1 })}
-                  className="block truncate rounded-md bg-surface-2 px-2 py-1.5 text-center text-sm hover:bg-accent hover:text-white"
-                >
-                  {e.name}
-                </Link>
-              </li>
-            ))}
-          </ol>
+          <EpisodeLinks kind={t.kind} slug={t.slug} season={n} names={seasonLines[0].episodes.map((e) => e.name)} />
         </section>
       ) : null}
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getDb } from "@/lib/db/server";
+import type { BrowseFilters } from "@/lib/domain/filters";
 import type { Kind } from "@/lib/domain/kinds";
 import { isNextEpisodeAhead } from "@/lib/domain/labels";
 import { normalizeKey } from "@/lib/domain/normalize";
@@ -102,6 +103,84 @@ export async function popularByKind(kind: Kind, limit: number): Promise<TitleCar
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.kind = ? ORDER BY t.popularity DESC LIMIT ?`,
     [kind, limit],
+  );
+}
+
+/**
+ * Filtered channel listing. Returns one extra row to signal "has next page" instead of
+ * counting the filtered set.
+ */
+export async function browseTitles(kind: Kind, f: BrowseFilters, limit: number, offset: number): Promise<{ titles: TitleCard[]; hasMore: boolean }> {
+  const db = await getDb();
+  const where = ["t.indexable = 1", "t.kind = ?"];
+  const params: (string | number)[] = [kind];
+  if (f.genre) {
+    where.push("t.genres LIKE ?");
+    params.push(`%"${f.genre}"%`);
+  }
+  if (f.region) {
+    where.push("t.countries LIKE ?");
+    params.push(`%"${f.region}"%`);
+  }
+  if (f.year === "older") where.push("t.year < 2010");
+  else if (f.year === "2010s") where.push("t.year BETWEEN 2010 AND 2019");
+  else if (f.year) {
+    where.push("t.year = ?");
+    params.push(Number(f.year));
+  }
+  if (f.sort === "rating") where.push("t.vote_count >= 50");
+  const order =
+    f.sort === "hot" ? "t.popularity DESC" : f.sort === "rating" ? "t.vote_average DESC, t.vote_count DESC" : "t.source_updated_at DESC, t.id DESC";
+  const rows = await db.all<TitleCard>(
+    `SELECT ${CARD_COLUMNS} ${CARD_JOIN} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    [...params, limit + 1, offset],
+  );
+  return { titles: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
+export interface FollowCard extends TitleCard {
+  next_episode_date: string | null;
+  next_episode_number: number | null;
+  next_episode_season: number | null;
+  tv_status: string | null;
+}
+
+/** Cards for a list of ids (followed titles). D1 caps bound parameters at 100. */
+export async function titlesByIds(ids: number[]): Promise<FollowCard[]> {
+  const db = await getDb();
+  return db.all<FollowCard>(
+    `SELECT ${CARD_COLUMNS}, t.next_episode_date, t.next_episode_number, t.next_episode_season, t.tv_status ${CARD_JOIN}
+     WHERE t.id IN (${ids.map(() => "?").join(",")}) AND t.status = 'active'`,
+    ids.slice(0, 90),
+  );
+}
+
+export interface FeaturedCard extends TitleCard {
+  backdrop_path: string;
+  overview: string | null;
+  genres: string;
+  tmdb_type: "movie" | "tv";
+}
+
+/** Hero slides: popular titles with a backdrop that got new episodes/lines recently. */
+export async function featuredTitles(limit: number): Promise<FeaturedCard[]> {
+  const db = await getDb();
+  return db.all<FeaturedCard>(
+    `SELECT ${CARD_COLUMNS}, t.backdrop_path, t.overview, t.genres, t.tmdb_type ${CARD_JOIN}
+     WHERE t.indexable = 1 AND t.backdrop_path IS NOT NULL AND t.source_updated_at >= datetime('now', '-10 days')
+     ORDER BY t.popularity DESC LIMIT ?`,
+    [limit],
+  );
+}
+
+/** Well-rated titles with enough votes to mean something. */
+export async function topRated(limit: number): Promise<TitleCard[]> {
+  const db = await getDb();
+  return db.all<TitleCard>(
+    `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
+     WHERE t.indexable = 1 AND t.vote_count >= 200 AND t.vote_average >= 7.5
+     ORDER BY t.vote_average DESC, t.vote_count DESC LIMIT ?`,
+    [limit],
   );
 }
 

@@ -1,4 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
+import { MobileTabBar } from "@/components/nav/NavLinks";
+import { NavProgress } from "@/components/nav/NavProgress";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { site } from "@/lib/config/site";
@@ -29,10 +32,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-CN" className="h-full">
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+        {/* Only the progress bar sits in this boundary; page content is outside it. */}
+        <Suspense fallback={null}>
+          <NavProgress />
+        </Suspense>
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
+        <MobileTabBar />
       </body>
     </html>
   );

@@ -40,25 +40,29 @@ export default async function WatchPage({ params, searchParams }: PageProps<"/wa
   const ep = Math.max(1, Number(one(q.ep)) || 1);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-6">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold">
+    <div className="mx-auto max-w-7xl px-4 pt-3 sm:pt-6">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h1 className="min-w-0 truncate text-lg font-semibold sm:text-xl">
           {t.name}
-          {t.year ? <span className="ml-2 text-base font-normal text-muted">{t.year}</span> : null}
+          {t.year ? <span className="ml-2 text-sm font-normal text-muted">{t.year}</span> : null}
         </h1>
-        <Link href={titlePath(t.kind, t.slug)} className="text-sm text-muted hover:text-accent">
-          ‹ 返回详情
+        <Link href={titlePath(t.kind, t.slug)} className="shrink-0 text-sm text-muted hover:text-accent">
+          详情 ›
         </Link>
       </div>
       <Player
-        titleId={t.id}
-        titleName={t.name}
-        poster={tmdbImage(t.backdrop_path, "w1280")}
+        title={{ id: t.id, kind: t.kind, slug: t.slug, name: t.name, poster: t.poster_path, backdrop: t.backdrop_path, year: t.year, latestLabel: t.latest_label }}
+        backdrop={tmdbImage(t.backdrop_path, "w1280")}
         lines={lines}
         seasons={seasonNumbers.map((n) => ({ number: n, name: seasons.find((s) => s.season_number === n)?.name ?? `第${n}季` }))}
         initial={{ season, ep, line: one(q.line) ?? null }}
       />
-      {t.overview ? <p className="mt-8 max-w-3xl text-sm leading-7 text-muted">{t.overview}</p> : null}
+      {t.overview ? (
+        <section className="mt-8 max-w-3xl">
+          <h2 className="mb-2 text-base font-semibold">剧情简介</h2>
+          <p className="text-sm leading-7 text-muted">{t.overview}</p>
+        </section>
+      ) : null}
     </div>
   );
 }
