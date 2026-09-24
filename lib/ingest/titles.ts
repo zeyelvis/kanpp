@@ -103,8 +103,8 @@ interface TitleFields {
   vote_average: number | null;
   vote_count: number | null;
   popularity: number | null;
-  cast: string;
-  crew: string;
+  cast_json: string;
+  crew_json: string;
 }
 
 export function titleFieldsFromDetails(d: TmdbDetails, type: TmdbType, kind: Kind): TitleFields {
@@ -138,8 +138,8 @@ export function titleFieldsFromDetails(d: TmdbDetails, type: TmdbType, kind: Kin
     vote_average: d.vote_count ? d.vote_average ?? null : null,
     vote_count: d.vote_count ?? null,
     popularity: d.popularity ?? null,
-    cast: JSON.stringify(cast),
-    crew: JSON.stringify(crew),
+    cast_json: JSON.stringify(cast),
+    crew_json: JSON.stringify(crew),
   };
 }
 
@@ -152,7 +152,7 @@ const FIELD_NAMES = [
   "kind", "name", "original_name", "year", "tmdb_type", "tmdb_id", "imdb_id", "overview", "tagline",
   "poster_path", "backdrop_path", "genres", "countries", "languages", "runtime", "release_date", "last_air_date",
   "tv_status", "number_of_seasons", "number_of_episodes", "next_episode_date", "next_episode_season",
-  "next_episode_number", "vote_average", "vote_count", "popularity", "cast", "crew",
+  "next_episode_number", "vote_average", "vote_count", "popularity", "cast_json", "crew_json",
 ] as const satisfies readonly (keyof TitleFields)[];
 
 /**

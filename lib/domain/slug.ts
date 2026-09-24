@@ -34,13 +34,29 @@ export function seasonPath(kind: Kind, slug: string, season: number): string {
   return `${titlePath(kind, slug)}/s${season}`;
 }
 
-export function watchPath(kind: Kind, slug: string, episode?: { season?: number | null; index: number }): string {
-  const base = `/watch/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}`;
-  if (!episode) return base;
+/** Player URL. `ep` is 1-based; `line` is a source id. */
+export function watchPath(kind: Kind, slug: string, opts: { season?: number | null; ep?: number; line?: string } = {}): string {
   const q = new URLSearchParams();
-  if (episode.season) q.set("s", String(episode.season));
-  q.set("ep", String(episode.index + 1));
-  return `${base}?${q}`;
+  if (opts.season) q.set("s", String(opts.season));
+  if (opts.ep) q.set("ep", String(opts.ep));
+  if (opts.line) q.set("line", opts.line);
+  const qs = q.toString();
+  return `/watch/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}${qs ? `?${qs}` : ""}`;
+}
+
+/**
+ * True when a route segment was percent-encoded more than once. The runtime may hand us the
+ * segment raw ("%E5%85%B0...") or already decoded; one decode must yield plain text either
+ * way, so anything still escaped after one pass is over-encoded. (Slugs never contain "%".)
+ */
+export function isOverEncoded(rawSegment: string): boolean {
+  let once = rawSegment;
+  try {
+    once = decodeURIComponent(rawSegment);
+  } catch {
+    return false;
+  }
+  return /%[0-9a-f]{2}/i.test(once);
 }
 
 /**

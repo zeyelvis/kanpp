@@ -1,5 +1,6 @@
 import type { Db } from "@/lib/db/types";
 import { isPublishableName } from "@/lib/domain/safety";
+import { SOURCES } from "@/lib/sources/registry";
 
 export const MIN_OVERVIEW_LENGTH = 20;
 
@@ -27,9 +28,11 @@ export async function refreshTitles(db: Db, titleIds: Iterable<number>): Promise
        ORDER BY vod_time DESC LIMIT 1`,
       [id],
     );
+    const active = SOURCES.map((s) => s.id);
     const playable = await db.first<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM source_items WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0",
-      [id],
+      `SELECT COUNT(*) AS n FROM source_items WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
+       AND source_id IN (${active.map(() => "?").join(",")})`,
+      [id, ...active],
     );
     const ok =
       t.status === "active" &&

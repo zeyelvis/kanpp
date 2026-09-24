@@ -35,8 +35,8 @@ CREATE TABLE titles (
   vote_average          REAL,
   vote_count            INTEGER,
   popularity            REAL,
-  cast                  TEXT NOT NULL DEFAULT '[]',   -- JSON [{id,name,character,profile}]
-  crew                  TEXT NOT NULL DEFAULT '[]',   -- JSON [{id,name,job}]
+  cast_json             TEXT NOT NULL DEFAULT '[]',   -- JSON [{id,name,character,profile}]
+  crew_json             TEXT NOT NULL DEFAULT '[]',   -- JSON [{id,name,job}]
   latest_label          TEXT,                     -- freshest source remark, e.g. 更新至第12集
   source_updated_at     TEXT,                     -- newest vod_time among linked sources
   status                TEXT NOT NULL DEFAULT 'active'

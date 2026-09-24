@@ -64,14 +64,14 @@ export function candidateFromDetails(d: TmdbDetails, type: TmdbType): CandidateS
 }
 
 async function candidateFromDb(db: Db, titleId: number): Promise<CandidateSignal | null> {
-  const t = await db.first<{ year: number | null; tmdb_type: TmdbType; cast: string; crew: string; status: string }>(
-    "SELECT year, tmdb_type, cast, crew, status FROM titles WHERE id = ?",
+  const t = await db.first<{ year: number | null; tmdb_type: TmdbType; cast_json: string; crew_json: string; status: string }>(
+    "SELECT year, tmdb_type, cast_json, crew_json, status FROM titles WHERE id = ?",
     [titleId],
   );
   if (!t || t.status !== "active") return null;
   const aliases = await db.all<{ norm: string }>("SELECT norm FROM aliases WHERE title_id = ?", [titleId]);
   const seasons = await db.all<{ season_number: number; air_date: string | null }>("SELECT season_number, air_date FROM seasons WHERE title_id = ?", [titleId]);
-  const people = [...(JSON.parse(t.cast) as { name: string }[]), ...(JSON.parse(t.crew) as { name: string }[])].map((p) => p.name);
+  const people = [...(JSON.parse(t.cast_json) as { name: string }[]), ...(JSON.parse(t.crew_json) as { name: string }[])].map((p) => p.name);
   return {
     keys: new Set(aliases.map((a) => a.norm)),
     year: t.year,

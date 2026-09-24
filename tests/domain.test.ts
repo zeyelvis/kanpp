@@ -3,7 +3,8 @@ import { scoreMatch, type CandidateSignal, type SourceSignal } from "@/lib/domai
 import { cleanDisplayName, normalizeKey, stripGluedYear } from "@/lib/domain/normalize";
 import { hasAdultSignal, isPublishableName } from "@/lib/domain/safety";
 import { extractSeason, parseChineseNumber } from "@/lib/domain/season";
-import { baseSlug, decodeSlugParam, titlePath } from "@/lib/domain/slug";
+import { baseSlug, decodeSlugParam, isOverEncoded, titlePath } from "@/lib/domain/slug";
+import { isNextEpisodeAhead, latestEpisodeNumber } from "@/lib/domain/labels";
 import { classifyCategory } from "@/lib/sources/categories";
 import { parsePlayGroups, pickHlsEpisodes } from "@/lib/sources/playurl";
 
@@ -65,6 +66,12 @@ describe("slugs", () => {
     const param = path.split("/")[2];
     expect(decodeSlugParam(param)).toBe("布达佩斯大饭店-2014");
     expect(decodeSlugParam(encodeURIComponent(param))).toBe("布达佩斯大饭店-2014"); // double-encoded
+  });
+  it("detects over-encoding whether or not the runtime pre-decoded the segment", () => {
+    const slug = "布达佩斯大饭店-2014";
+    expect(isOverEncoded(slug)).toBe(false); // runtime decoded
+    expect(isOverEncoded(encodeURIComponent(slug))).toBe(false); // raw segment
+    expect(isOverEncoded(encodeURIComponent(encodeURIComponent(slug)))).toBe(true);
   });
 });
 
@@ -169,5 +176,20 @@ describe("scoreMatch", () => {
     const withPeople = src({ year: null, people: ["韦斯·安德森", "拉尔夫 费因斯"] });
     expect(scoreMatch(withPeople, cand()).decision).toBe("same");
     expect(scoreMatch(src({ year: null }), cand()).decision).toBe("review");
+  });
+});
+
+describe("next-episode freshness", () => {
+  it("parses episode counts out of source labels", () => {
+    expect(latestEpisodeNumber("更新至第30集")).toBe(30);
+    expect(latestEpisodeNumber("更新第30集")).toBe(30);
+    expect(latestEpisodeNumber("30集全")).toBe(30);
+    expect(latestEpisodeNumber("HD")).toBeNull();
+  });
+  it("hides a TMDB next episode the sources already have", () => {
+    const base = { next_episode_date: "2026-09-24", next_episode_number: 29, latest_label: "更新第30集" };
+    expect(isNextEpisodeAhead(base, "2026-09-24")).toBe(false);
+    expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-24")).toBe(true);
+    expect(isNextEpisodeAhead({ ...base, next_episode_number: 31 }, "2026-09-25")).toBe(false); // in the past
   });
 });

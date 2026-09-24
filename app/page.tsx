@@ -1,69 +1,77 @@
-import Image from "next/image";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { PosterGrid } from "@/components/PosterCard";
+import { Rail } from "@/components/Rail";
+import { site } from "@/lib/config/site";
+import { latestByKind, upcomingEpisodes } from "@/lib/data/titles";
+import { KIND_LABEL, KIND_SEGMENT, type Kind } from "@/lib/domain/kinds";
+import { shortDate } from "@/lib/domain/labels";
+import { titlePath } from "@/lib/domain/slug";
+import { tmdbImage } from "@/lib/images";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: { url: "/" },
+};
+
+const RAILS: { kind: Kind; title: string }[] = [
+  { kind: "tv", title: "剧集更新" },
+  { kind: "movie", title: "最新电影" },
+  { kind: "anime", title: "动漫更新" },
+  { kind: "variety", title: "综艺更新" },
+  { kind: "doc", title: "纪录片" },
+];
+
+export default async function HomePage() {
+  const [upcoming, ...rails] = await Promise.all([upcomingEpisodes(7, 12), ...RAILS.map((r) => latestByKind(r.kind, 12))]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <>
+      <section className="mx-auto max-w-7xl px-4 pt-8">
+        <h1 className="text-2xl font-bold sm:text-3xl">
+          {site.name}
+          <span className="ml-3 text-base font-normal text-muted sm:text-lg">{site.tagline}</span>
+        </h1>
+      </section>
+
+      {upcoming.length > 0 ? (
+        <Rail title="本周待播" id="upcoming">
+          <ul className="scrollbar-none -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
+            {upcoming.map((t) => (
+              <li key={t.id} className="w-64 shrink-0">
+                <Link href={titlePath(t.kind, t.slug)} className="flex gap-3 rounded-xl bg-surface p-2 ring-1 ring-line hover:ring-accent/60">
+                  {t.poster_path ? (
+                    <img src={tmdbImage(t.poster_path, "w185")!} alt={`${t.name}海报`} width={64} height={96} loading="lazy" className="h-24 w-16 shrink-0 rounded-md object-cover" />
+                  ) : null}
+                  <div className="min-w-0 py-1">
+                    <p className="truncate font-medium">{t.name}</p>
+                    <p className="mt-1 text-sm text-accent">{shortDate(t.next_episode_date)}</p>
+                    {t.next_episode_number ? (
+                      <p className="text-xs text-muted">
+                        {t.next_episode_season && t.next_episode_season > 1 ? `第${t.next_episode_season}季 ` : ""}第{t.next_episode_number}集
+                      </p>
+                    ) : null}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Rail>
+      ) : null}
+
+      {RAILS.map((r, i) =>
+        rails[i].length > 0 ? (
+          <Rail key={r.kind} title={r.title} href={`/${KIND_SEGMENT[r.kind]}`} id={`rail-${r.kind}`}>
+            <PosterGrid titles={rails[i]} eagerCount={i === 0 ? 6 : 0} />
+          </Rail>
+        ) : null,
+      )}
+
+      {rails.every((r) => r.length === 0) ? (
+        <p className="mx-auto max-w-7xl px-4 pt-10 text-muted">片库正在建设中，请稍后再来。{KIND_LABEL.movie}、{KIND_LABEL.tv}即将上线。</p>
+      ) : null}
+    </>
   );
 }
