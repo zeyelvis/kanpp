@@ -11,7 +11,7 @@
  */
 import { parseArgs } from "node:util";
 import type { Db } from "@/lib/db/types";
-import { refreshTitles } from "@/lib/ingest/publish";
+import { refreshTitles, storeCatalogCounts } from "@/lib/ingest/publish";
 import { refreshAiringSeries } from "@/lib/ingest/refresh";
 import { Resolver } from "@/lib/ingest/resolve";
 import { upsertSourceRows } from "@/lib/ingest/source-rows";
@@ -109,6 +109,7 @@ async function main() {
 
   const published = await refreshTitles(db, touched);
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
+  log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
 }
 
 main().catch((err) => {

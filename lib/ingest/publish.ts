@@ -4,6 +4,23 @@ import { SOURCES } from "@/lib/sources/registry";
 
 export const MIN_OVERVIEW_LENGTH = 20;
 
+/**
+ * Stores per-kind indexable counts in sync_state, so list pages and sitemaps read one row
+ * instead of counting the whole catalog on every request.
+ */
+export async function storeCatalogCounts(db: Db): Promise<Record<string, number>> {
+  const rows = await db.all<{ kind: string; n: number }>("SELECT kind, COUNT(*) AS n FROM titles WHERE indexable = 1 GROUP BY kind");
+  const counts: Record<string, number> = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
+  counts.all = rows.reduce((sum, r) => sum + r.n, 0);
+  await db.batch(
+    Object.entries(counts).map(([kind, n]) => ({
+      sql: "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+      params: [`count:${kind}`, String(n)],
+    })),
+  );
+  return counts;
+}
+
 interface TitleRow {
   id: number;
   name: string;

@@ -135,9 +135,16 @@ export async function relatedTitles(t: { id: number; kind: Kind; genres: string[
   );
 }
 
-export async function countByKind(kind: Kind): Promise<number> {
+/** Catalog sizes precomputed by the ingest run (falls back to counting if never stored). */
+async function storedCount(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
   const db = await getDb();
-  return (await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM titles WHERE indexable = 1 AND kind = ?", [kind]))?.n ?? 0;
+  const stored = await db.first<{ value: string }>("SELECT value FROM sync_state WHERE key = ?", [`count:${key}`]);
+  if (stored) return Number(stored.value);
+  return (await db.first<{ n: number }>(fallbackSql, params))?.n ?? 0;
+}
+
+export function countByKind(kind: Kind): Promise<number> {
+  return storedCount(kind, "SELECT COUNT(*) AS n FROM titles WHERE indexable = 1 AND kind = ?", [kind]);
 }
 
 /** Slug lookup. Returns the title plus whether this slug is its canonical one. */
@@ -230,7 +237,6 @@ export async function sitemapTitles(offset: number, limit: number): Promise<Site
   );
 }
 
-export async function countIndexable(): Promise<number> {
-  const db = await getDb();
-  return (await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM titles WHERE indexable = 1"))?.n ?? 0;
+export function countIndexable(): Promise<number> {
+  return storedCount("all", "SELECT COUNT(*) AS n FROM titles WHERE indexable = 1", []);
 }
