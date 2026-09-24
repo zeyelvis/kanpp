@@ -1,0 +1,173 @@
+import { describe, expect, it } from "vitest";
+import { scoreMatch, type CandidateSignal, type SourceSignal } from "@/lib/domain/match";
+import { cleanDisplayName, normalizeKey, stripGluedYear } from "@/lib/domain/normalize";
+import { hasAdultSignal, isPublishableName } from "@/lib/domain/safety";
+import { extractSeason, parseChineseNumber } from "@/lib/domain/season";
+import { baseSlug, decodeSlugParam, titlePath } from "@/lib/domain/slug";
+import { classifyCategory } from "@/lib/sources/categories";
+import { parsePlayGroups, pickHlsEpisodes } from "@/lib/sources/playurl";
+
+describe("normalizeKey", () => {
+  it("strips release annotations but keeps the title", () => {
+    expect(normalizeKey("战狼2 国语中字")).toBe("战狼2");
+    expect(normalizeKey("流浪地球【抢先版】")).toBe("流浪地球");
+    expect(normalizeKey("沙丘2 HD")).toBe("沙丘2");
+    expect(normalizeKey("生化危机：爆发夜")).toBe("生化危机爆发夜");
+  });
+  it("does not eat ASCII tags inside words", () => {
+    expect(normalizeKey("Cats")).toBe("cats");
+    expect(normalizeKey("The Bill")).toBe("thebill");
+  });
+  it("cleans search queries without mangling titles", () => {
+    expect(cleanDisplayName("死有对证国语")).toBe("死有对证");
+    expect(cleanDisplayName("米奇妙妙车队第2季国语")).toBe("米奇妙妙车队第2季");
+    expect(cleanDisplayName("索斯机械兽WILD ZERO日语")).toBe("索斯机械兽WILD ZERO");
+    expect(cleanDisplayName("八面埋伏2026", 2026)).toBe("八面埋伏");
+    expect(cleanDisplayName("请回答1988", 2015)).toBe("请回答1988");
+    expect(cleanDisplayName("2012", 2012)).toBe("2012");
+    expect(extractSeason(cleanDisplayName("米奇妙妙车队第2季国语"))).toEqual({ base: "米奇妙妙车队", season: 2 });
+  });
+  it("keeps digits that are part of the title", () => {
+    expect(normalizeKey("请回答1988")).toBe("请回答1988");
+    expect(stripGluedYear(normalizeKey("请回答1988"), 2015)).toBe("请回答1988");
+    expect(stripGluedYear(normalizeKey("生化危机：爆发夜2026"), 2026)).toBe("生化危机爆发夜");
+    expect(stripGluedYear("2012", 2012)).toBe("2012");
+  });
+});
+
+describe("extractSeason", () => {
+  it("reads explicit season markers", () => {
+    expect(extractSeason("庆余年第二季")).toEqual({ base: "庆余年", season: 2 });
+    expect(extractSeason("龙之家族 第2季")).toEqual({ base: "龙之家族", season: 2 });
+    expect(extractSeason("Loki S02")).toEqual({ base: "Loki", season: 2 });
+    expect(extractSeason("名侦探柯南 第十二季")).toEqual({ base: "名侦探柯南", season: 12 });
+  });
+  it("treats a bare trailing number as part of the title (sequels)", () => {
+    expect(extractSeason("唐人街探案2")).toEqual({ base: "唐人街探案2", season: null });
+    expect(extractSeason("请回答1988")).toEqual({ base: "请回答1988", season: null });
+  });
+  it("parses Chinese numerals", () => {
+    expect(parseChineseNumber("二十三")).toBe(23);
+    expect(parseChineseNumber("十")).toBe(10);
+    expect(parseChineseNumber("两")).toBe(2);
+  });
+});
+
+describe("slugs", () => {
+  it("builds readable, encoding-safe slugs", () => {
+    expect(baseSlug("布达佩斯大饭店", 2014)).toBe("布达佩斯大饭店-2014");
+    expect(baseSlug("生化危机：爆发夜", 2026)).toBe("生化危机-爆发夜-2026");
+    expect(baseSlug("100%狼", null)).toBe("100-狼");
+    expect(baseSlug("Spider-Man: No Way Home", 2021)).toBe("spider-man-no-way-home-2021");
+  });
+  it("round-trips through the URL", () => {
+    const path = titlePath("movie", "布达佩斯大饭店-2014");
+    const param = path.split("/")[2];
+    expect(decodeSlugParam(param)).toBe("布达佩斯大饭店-2014");
+    expect(decodeSlugParam(encodeURIComponent(param))).toBe("布达佩斯大饭店-2014"); // double-encoded
+  });
+});
+
+describe("content policy", () => {
+  it("matches Latin blacklist words as whole words only", () => {
+    expect(hasAdultSignal("The Prestige")).toBe(false);
+    expect(hasAdultSignal("Episode 1")).toBe(false);
+    expect(hasAdultSignal("FBI 2018")).toBe(false);
+    expect(hasAdultSignal("SSIS-123 xxx")).toBe(true);
+    expect(hasAdultSignal("JAV 合集")).toBe(true);
+  });
+  it("requires a clean Chinese display name", () => {
+    expect(isPublishableName("星球大战")).toBe(true);
+    expect(isPublishableName("布达佩斯大饭店")).toBe(true);
+    expect(isPublishableName("The Bill")).toBe(false);
+    expect(isPublishableName("ど根性物語 銭の踊り")).toBe(false);
+    expect(isPublishableName("悪魔からの勲章")).toBe(false);
+    expect(isPublishableName("某某电影解说")).toBe(false);
+  });
+});
+
+describe("categories", () => {
+  it("classifies CMS categories", () => {
+    expect(classifyCategory("伦理片")).toBeNull();
+    expect(classifyCategory("电影解说")).toBeNull();
+    expect(classifyCategory("短剧")).toBeNull();
+    expect(classifyCategory("动作片")).toEqual({ kind: "movie", tmdbType: "movie" });
+    expect(classifyCategory("国产剧")).toEqual({ kind: "tv", tmdbType: "tv" });
+    expect(classifyCategory("日本动漫", "名侦探柯南")).toEqual({ kind: "anime", tmdbType: "tv" });
+    expect(classifyCategory("日本动漫", "名侦探柯南：剧场版")).toEqual({ kind: "anime", tmdbType: "movie" });
+    expect(classifyCategory("奇怪分类")).toBeUndefined();
+  });
+});
+
+describe("play urls", () => {
+  const from = "gsyun$$$gsm3u8";
+  const url = "第01集$https://a.com/play/x#第02集$https://a.com/play/y$$$第01集$https://a.com/1/index.m3u8#第02集$https://a.com/2/index.m3u8";
+  it("splits groups and episodes", () => {
+    const groups = parsePlayGroups(from, url);
+    expect(groups).toHaveLength(2);
+    expect(groups[1].episodes[1]).toEqual({ name: "第02集", url: "https://a.com/2/index.m3u8" });
+  });
+  it("only returns directly playable HLS", () => {
+    expect(pickHlsEpisodes(from, url).map((e) => e.url)).toEqual(["https://a.com/1/index.m3u8", "https://a.com/2/index.m3u8"]);
+    expect(pickHlsEpisodes("gsyun", "正片$https://a.com/play/x")).toEqual([]);
+  });
+});
+
+describe("scoreMatch", () => {
+  const cand = (over: Partial<CandidateSignal> = {}): CandidateSignal => ({
+    keys: new Set(["布达佩斯大饭店"]),
+    year: 2014,
+    seasonYears: new Map(),
+    tmdbType: "movie",
+    people: ["韦斯·安德森", "拉尔夫·费因斯"],
+    ...over,
+  });
+  const src = (over: Partial<SourceSignal> = {}): SourceSignal => ({
+    keys: ["布达佩斯大饭店"],
+    season: null,
+    year: 2014,
+    tmdbType: "movie",
+    people: [],
+    ...over,
+  });
+
+  it("accepts exact name + year", () => {
+    expect(scoreMatch(src(), cand()).decision).toBe("same");
+  });
+  it("never lets a parent title absorb a subtitled sequel", () => {
+    const parent = cand({ keys: new Set(["生化危机"]), year: 2002 });
+    expect(scoreMatch(src({ keys: ["生化危机爆发夜"], year: 2026 }), parent).decision).toBe("different");
+  });
+  it("rejects movie vs series", () => {
+    expect(scoreMatch(src({ tmdbType: "tv" }), cand()).decision).toBe("different");
+  });
+  it("rejects same-name remakes far apart in time", () => {
+    expect(scoreMatch(src({ year: 1998 }), cand()).decision).toBe("different");
+  });
+  it("sends an unmarked later-year series row to review, not auto-match", () => {
+    const show = cand({ keys: new Set(["某剧"]), year: 2020, tmdbType: "tv", people: [] });
+    expect(scoreMatch(src({ keys: ["某剧"], year: 2023, tmdbType: "tv" }), show).decision).toBe("review");
+  });
+  it("matches a season row against that season's air year", () => {
+    const show = cand({ keys: new Set(["龙之家族"]), year: 2022, tmdbType: "tv", seasonYears: new Map([[1, 2022], [2, 2024]]), people: [] });
+    expect(scoreMatch(src({ keys: ["龙之家族"], year: 2024, season: 2, tmdbType: "tv" }), show).decision).toBe("same");
+    expect(scoreMatch(src({ keys: ["龙之家族"], year: 2026, season: 5, tmdbType: "tv" }), show).decision).toBe("different");
+    // TMDB has not added season 3 yet, but the row is newer than season 2.
+    expect(scoreMatch(src({ keys: ["龙之家族"], year: 2026, season: 3, tmdbType: "tv" }), show).decision).toBe("same");
+  });
+  it("lets long-running variety rows carry the current year", () => {
+    const show = cand({ keys: new Set(["全民星攻略"]), year: 2019, tmdbType: "tv", people: [] });
+    const row = src({ keys: ["全民星攻略"], year: 2020, tmdbType: "tv" });
+    expect(scoreMatch(row, show).decision).toBe("review");
+    expect(scoreMatch({ ...row, ongoing: true }, show).decision).toBe("same");
+  });
+  it("ignores foreign casts listed in other scripts", () => {
+    const foreign = cand({ people: ["Ralph Fiennes", "Tony Revolori"] });
+    expect(scoreMatch(src({ year: 2015, people: ["拉尔夫·费因斯"] }), foreign).decision).toBe("same");
+  });
+  it("uses people overlap to confirm a match without a year", () => {
+    const withPeople = src({ year: null, people: ["韦斯·安德森", "拉尔夫 费因斯"] });
+    expect(scoreMatch(withPeople, cand()).decision).toBe("same");
+    expect(scoreMatch(src({ year: null }), cand()).decision).toBe("review");
+  });
+});
