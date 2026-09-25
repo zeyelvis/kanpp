@@ -5,6 +5,8 @@ interface D1HttpOptions {
   databaseId: string;
   /** A fixed API token, or a getter for short-lived tokens that are refreshed elsewhere. */
   apiToken: string | (() => string);
+  /** Called once per failed attempt on 401/403, before retrying (short-lived tokens). */
+  refreshToken?: () => void;
 }
 
 interface QueryResult<T> {
@@ -14,7 +16,7 @@ interface QueryResult<T> {
 }
 
 /** D1 REST API adapter for scripts that write to the production database. */
-export function d1HttpDb({ accountId, databaseId, apiToken }: D1HttpOptions): Db {
+export function d1HttpDb({ accountId, databaseId, apiToken, refreshToken }: D1HttpOptions): Db {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 
   async function post<T>(body: unknown): Promise<QueryResult<T>[]> {
@@ -26,8 +28,10 @@ export function d1HttpDb({ accountId, databaseId, apiToken }: D1HttpOptions): Db
       });
       const json = (await res.json()) as { success: boolean; result: QueryResult<T>[]; errors: unknown[] };
       if (res.ok && json.success) return json.result;
-      // 401/403 also retry: a short-lived OAuth token may have just been refreshed on disk.
-      const retryable = res.status === 429 || res.status >= 500 || ((res.status === 401 || res.status === 403) && typeof apiToken === "function");
+      const authFailed = res.status === 401 || res.status === 403;
+      // An expired short-lived token: refresh it, then retry.
+      if (authFailed && refreshToken && attempt < 3) refreshToken();
+      const retryable = res.status === 429 || res.status >= 500 || (authFailed && Boolean(refreshToken));
       if (!retryable || attempt >= 3) {
         throw new Error(`D1 HTTP ${res.status}: ${JSON.stringify(json.errors)}`);
       }
