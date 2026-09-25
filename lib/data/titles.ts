@@ -311,17 +311,30 @@ export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"):
     .map(({ priority: _p, ...line }) => line);
 });
 
-export async function searchTitles(query: string, limit = 48): Promise<TitleCard[]> {
+/**
+ * Titles for a search. `inside` adds titles whose name contains the words when the prefix
+ * search finds few (a catalog scan): for the results page, not for per-keystroke suggestions.
+ */
+export async function searchTitles(query: string, limit = 48, { inside = false } = {}): Promise<TitleCard[]> {
   const key = normalizeKey(query);
   if (!key) return [];
   const q = query.trim();
   // Prefix range on the alias index: exact and "starts with" hits, both scripts.
-  return cachedQuery(["search", key, q, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
+  const prefix = await cachedQuery(["search", key, q, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.id IN (SELECT title_id FROM aliases WHERE norm >= ? AND norm < ?) AND +t.indexable = 1
      ORDER BY (t.name = ?) DESC, t.popularity DESC LIMIT ?`,
     [key, `${key}\u{10FFFF}`, q, limit],
   ));
+  // Few hits: also titles whose Chinese name contains the words ("三十岁" -> 东京三十岁左右).
+  // A scan of the catalog, so only for Chinese queries of two or more characters, cached.
+  if (!inside || prefix.length >= 8 || !/^[\p{Script=Han}\p{N}]{2,}$/u.test(key)) return prefix;
+  const contained = await cachedQuery(["search-inside", key, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
+    `SELECT ${CARD_COLUMNS} ${CARD_JOIN} WHERE t.indexable = 1 AND t.name LIKE ? ORDER BY t.popularity DESC LIMIT ?`,
+    [`%${key}%`, limit],
+  ));
+  const seen = new Set(prefix.map((t) => t.id));
+  return [...prefix, ...contained.filter((t) => !seen.has(t.id))].slice(0, limit);
 }
 
 export interface SitemapEntry {

@@ -193,3 +193,23 @@ export async function loadPersonPage(slug: string): Promise<({ person: PersonDet
   if (credits.length === 0) return null;
   return { person, credits, ...(await personNetwork(person.id, credits.map((c) => c.id))) };
 }
+
+export interface PersonHit {
+  name: string;
+  slug: string;
+  profile_path: string | null;
+  title_count: number;
+}
+
+/** People with a page whose name starts with the query ("周迅", "宫崎"), most titles first. */
+export function searchPeople(query: string, limit = 6): Promise<PersonHit[]> {
+  const q = query.normalize("NFKC").trim();
+  if (!/^\p{Script=Han}[\p{Script=Han}·・]*$/u.test(q)) return Promise.resolve([]);
+  return cachedQuery(["search-people", q, limit], [TAG.catalog], 3600, async () =>
+    (await getDb()).all<PersonHit>(
+      `SELECT name, slug, profile_path, title_count FROM people
+       WHERE slug >= ? AND slug < ? AND +indexable = 1 ORDER BY (name = ?) DESC, title_count DESC LIMIT ?`,
+      [q, `${q}\u{10FFFF}`, q, limit],
+    ),
+  );
+}

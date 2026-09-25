@@ -10,6 +10,7 @@
 const RULES: { prefix: string; binding: string }[] = [
   { prefix: "/api/beacon", binding: "RL_BEACON" }, // player outcome reports: each is a D1 write
   { prefix: "/api/", binding: "RL_API" }, // lines, search suggestions, cards, revalidate
+  { prefix: "/search", binding: "RL_API" }, // results page: may scan the catalog
 ];
 
 interface RateLimiter {
