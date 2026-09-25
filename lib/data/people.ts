@@ -34,11 +34,13 @@ export const getPersonBySlug = cache((slug: string): Promise<PersonDetail | null
 export const personCredits = cache((personId: number): Promise<PersonCredit[]> =>
   cachedQuery(["person-credits", personId], [TAG.catalog], 86400, async () => {
     const rows = await (await getDb()).all<TitleCard & { role: string; character: string | null; popularity: number | null }>(
+      // CROSS JOIN fixes the join order: the person's credit ids drive primary-key lookups
+      // into titles. Left to the planner, SQLite scanned every indexable title and expanded
+      // the credits JSON once per title (tens of millions of steps per page).
       `SELECT ${CARD_COLUMNS}, t.popularity, json_extract(c.value, '$.r') AS role, json_extract(c.value, '$.c') AS character
-       FROM people p, json_each(p.credits) c
-       JOIN titles t ON t.id = json_extract(c.value, '$.t')
-       JOIN slugs s ON s.title_id = t.id AND s.is_canonical = 1
-       WHERE p.id = ? AND t.indexable = 1
+       FROM people p CROSS JOIN json_each(p.credits) c CROSS JOIN titles t CROSS JOIN slugs s
+       WHERE p.id = ? AND t.id = json_extract(c.value, '$.t') AND t.indexable = 1
+         AND s.title_id = t.id AND s.is_canonical = 1
        ORDER BY COALESCE(t.year, 0) DESC, t.popularity DESC`,
       [personId],
     );

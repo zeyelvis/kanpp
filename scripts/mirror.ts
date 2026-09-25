@@ -49,7 +49,7 @@ const TABLES: { name: string; key: string[]; insertOnly?: boolean }[] = [
 // Rows go over D1's HTTP API as bound parameters, one transaction per batch: unlike a SQL file
 // import this never locks the database for the live site, and big rows are not limited by
 // D1's 100 KB statement size. The Cloudflare API allows ~4 requests/s per user.
-const BATCH_ROWS = 100;
+const BATCH_ROWS = 200;
 const BATCH_BYTES = 2_000_000;
 const PARALLEL = 2;
 
