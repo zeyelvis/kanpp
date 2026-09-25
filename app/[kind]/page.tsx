@@ -5,7 +5,7 @@ import { Pagination } from "@/components/Pagination";
 import { TopicChips } from "@/components/TopicChips";
 import { topicsForKind } from "@/lib/domain/topics";
 import { PosterGrid } from "@/components/PosterCard";
-import { site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
 import { browseTitles, countByKind, PAGE_SIZE } from "@/lib/data/titles";
 import { browseHref, GENRES, isDefaultBrowse, parseFilters, REGIONS, SORTS, yearOptions, type BrowseFilters } from "@/lib/domain/filters";
 import { KIND_LABEL, KIND_SEGMENT, kindFromSegment, type Kind } from "@/lib/domain/kinds";
@@ -47,7 +47,7 @@ export async function generateMetadata({ params, searchParams }: PageProps<"/[ki
     title: page > 1 ? `${label}在线观看 - 第${page}页` : `${label}在线观看 - 最近更新`,
     description: `${site.name}${label}频道，共收录${total}部${label}，可按类型、地区、年份筛选，每部都有简介、演职员和可播放线路。`,
     alternates: { canonical: browseHref(base, f, page) },
-    openGraph: { url: browseHref(base, f, page) },
+    openGraph: { url: browseHref(base, f, page), images: [DEFAULT_OG_IMAGE] },
   };
 }
 

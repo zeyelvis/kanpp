@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
 import { upcomingEpisodes, type UpcomingCard } from "@/lib/data/titles";
 import { KIND_LABEL } from "@/lib/domain/kinds";
 import { titlePath } from "@/lib/domain/slug";
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: "追剧日历 - 未来两周剧集更新时间表",
   description: `${site.name}追剧日历：按日期列出未来两周将要播出新一集的电视剧、动漫和综艺，标明季数和集数，方便提前安排追剧。`,
   alternates: { canonical: "/schedule" },
-  openGraph: { url: "/schedule" },
+  openGraph: { url: "/schedule", images: [DEFAULT_OG_IMAGE] },
 };
 
 function dayLabel(date: string, today: string): string {

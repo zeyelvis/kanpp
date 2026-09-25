@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandMark } from "@/components/BrandMark";
 import { DesktopNav, MobileChannelBar } from "@/components/nav/NavLinks";
 import { SearchBox } from "@/components/nav/SearchBox";
 import { site } from "@/lib/config/site";
@@ -9,7 +10,7 @@ export function SiteHeader() {
       <header className="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur supports-[backdrop-filter]:bg-bg/75">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
           <Link href="/" className="flex shrink-0 items-center gap-2" aria-label={`${site.name}首页`}>
-            <span className="grid size-8 place-items-center rounded-lg bg-accent-fill text-base font-bold text-white">看</span>
+            <BrandMark className="size-8" />
             <span className="text-lg font-semibold tracking-wide">{site.name}</span>
           </Link>
           <DesktopNav />

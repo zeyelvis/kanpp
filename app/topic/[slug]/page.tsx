@@ -5,7 +5,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JsonLd } from "@/components/JsonLd";
 import { PosterGrid } from "@/components/PosterCard";
 import { PosterRail } from "@/components/PosterRail";
-import { absoluteUrl, site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, absoluteUrl, site } from "@/lib/config/site";
 import { topicData } from "@/lib/data/topics";
 import { browseHref, GENRES, REGIONS, yearOptions } from "@/lib/domain/filters";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: PageProps<"/topic/[slug]">): 
     description: topicDescription(topic, data),
     alternates: { canonical: path },
     robots: data.count >= MIN_TOPIC_TITLES ? { index: true, follow: true } : { index: false, follow: true },
-    openGraph: { url: path, title: topicTitle(topic) },
+    openGraph: { url: path, title: topicTitle(topic), images: [DEFAULT_OG_IMAGE] },
   };
 }
 

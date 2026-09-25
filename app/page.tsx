@@ -6,7 +6,7 @@ import { PosterRail } from "@/components/PosterRail";
 import { TopicChips } from "@/components/TopicChips";
 import { featuredTopics } from "@/lib/domain/topics";
 import { ScrollRail } from "@/components/ScrollRail";
-import { site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
 import { featuredTitles, latestByKind, topRated, upcomingEpisodes } from "@/lib/data/titles";
 import { KIND_SEGMENT, type Kind } from "@/lib/domain/kinds";
 import { shortDate } from "@/lib/domain/labels";
@@ -17,7 +17,7 @@ export const revalidate = 600;
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
-  openGraph: { url: "/" },
+  openGraph: { url: "/", images: [DEFAULT_OG_IMAGE] },
 };
 
 const RAILS: { kind: Kind; title: string }[] = [

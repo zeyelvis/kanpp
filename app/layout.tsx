@@ -4,7 +4,7 @@ import { MobileTabBar } from "@/components/nav/NavLinks";
 import { NavProgress } from "@/components/nav/NavProgress";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,11 +15,15 @@ export const metadata: Metadata = {
   },
   description: site.description,
   applicationName: site.name,
+  // A page that sets its own openGraph replaces this object: pages without an image of their
+  // own pass DEFAULT_OG_IMAGE again.
   openGraph: {
     siteName: site.name,
     locale: "zh_CN",
     type: "website",
+    images: [DEFAULT_OG_IMAGE],
   },
+  twitter: { card: "summary_large_image" },
   formatDetection: { telephone: false },
 };
 

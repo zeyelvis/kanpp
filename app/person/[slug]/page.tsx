@@ -5,7 +5,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JsonLd } from "@/components/JsonLd";
 import { PosterCard } from "@/components/PosterCard";
 import { ScrollRail } from "@/components/ScrollRail";
-import { absoluteUrl, site } from "@/lib/config/site";
+import { DEFAULT_OG_IMAGE, absoluteUrl, site } from "@/lib/config/site";
 import { loadPersonPage } from "@/lib/data/people";
 import { KIND_LABEL } from "@/lib/domain/kinds";
 import { decodeSlugParam, personPath, titlePath } from "@/lib/domain/slug";
@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: PageProps<"/person/[slug]">):
     description: describePerson(person, credits, billing),
     alternates: { canonical: path },
     robots: person.indexable ? { index: true, follow: true } : { index: false, follow: true },
-    openGraph: { type: "profile", url: path, title, ...(image ? { images: [{ url: image, alt: person.name }] } : {}) },
+    openGraph: { type: "profile", url: path, title, images: [image ? { url: image, alt: person.name } : DEFAULT_OG_IMAGE] },
   };
 }
 

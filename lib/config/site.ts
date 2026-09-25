@@ -12,6 +12,9 @@ export const site = {
     "看片片 kanpp.tv：海外华人的追剧看片站。电影、电视剧、动漫、综艺、纪录片在线观看，每部剧的季数、分集和更新进度一目了然。",
 } as const;
 
+/** The brand share card (public/og.png) for pages without an image of their own. */
+export const DEFAULT_OG_IMAGE = { url: "/og.png", width: 1200, height: 630, alt: `${site.name} - ${site.tagline}` };
+
 export function absoluteUrl(path: string): string {
   return `${site.url}${path.startsWith("/") ? path : `/${path}`}`;
 }
