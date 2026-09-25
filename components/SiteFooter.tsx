@@ -24,7 +24,10 @@ export function SiteFooter() {
         </nav>
       </div>
       <p className="pb-8 text-center text-xs text-faint">
-        © {new Date().getFullYear()} {site.domain}
+        © {new Date().getFullYear()} {site.domain} ·{" "}
+        <Link href="/dmca" className="hover:text-ink">
+          版权投诉 / DMCA
+        </Link>
       </p>
     </footer>
   );
