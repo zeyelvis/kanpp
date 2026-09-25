@@ -31,8 +31,9 @@ export async function notifySite(payload: { titleIds: number[]; created: boolean
 /** Submits the canonical detail URLs of the given titles to IndexNow. */
 export async function announceTitles(db: Db, titleIds: number[]): Promise<string> {
   const paths: string[] = [];
-  for (let i = 0; i < titleIds.length; i += 500) {
-    const ids = titleIds.slice(i, i + 500);
+  // D1 allows at most 100 bound parameters per query.
+  for (let i = 0; i < titleIds.length; i += 100) {
+    const ids = titleIds.slice(i, i + 100);
     const rows = await db.all<{ kind: Kind; slug: string }>(
       `SELECT t.kind, s.slug FROM titles t JOIN slugs s ON s.title_id = t.id AND s.is_canonical = 1
        WHERE t.indexable = 1 AND t.id IN (${ids.map(() => "?").join(",")})`,
