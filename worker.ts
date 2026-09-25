@@ -4,6 +4,7 @@
  * it imports the generated build output.
  */
 import { serveImage } from "./lib/edge/image-proxy";
+import { withSecurityHeaders } from "./lib/edge/security-headers";
 import handler from "./.open-next/worker.js";
 
 export { BucketCachePurge, DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
@@ -12,9 +13,9 @@ const worker = {
   async fetch(request, env, ctx) {
     if (new URL(request.url).pathname.startsWith("/img/")) {
       const lookup = async (key) => (await env.DB.prepare("SELECT url FROM source_images WHERE key = ?").bind(key).first("url")) ?? null;
-      return serveImage(request, env.IMAGES, ctx, lookup);
+      return withSecurityHeaders(await serveImage(request, env.IMAGES, ctx, lookup));
     }
-    return handler.fetch(request, env, ctx);
+    return withSecurityHeaders(await handler.fetch(request, env, ctx));
   },
 };
 

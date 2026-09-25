@@ -23,12 +23,23 @@ export function SiteFooter() {
           ))}
         </nav>
       </div>
-      <p className="pb-8 text-center text-xs text-faint">
-        © {new Date().getFullYear()} {site.domain} ·{" "}
+      <nav aria-label="站点信息" className="flex flex-wrap justify-center gap-x-4 gap-y-1 pb-8 text-xs text-faint">
+        <span>
+          © {new Date().getFullYear()} {site.domain}
+        </span>
+        <Link href="/about" className="hover:text-ink">
+          关于我们
+        </Link>
+        <Link href="/privacy" className="hover:text-ink">
+          隐私政策
+        </Link>
+        <Link href="/terms" className="hover:text-ink">
+          使用条款
+        </Link>
         <Link href="/dmca" className="hover:text-ink">
           版权投诉 / DMCA
         </Link>
-      </p>
+      </nav>
     </footer>
   );
 }

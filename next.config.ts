@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // <body>: not every crawler reads body-appended metadata, and our D1 reads are fast.
   htmlLimitedBots: /.*/,
   images: {
-    // Posters come straight from the TMDB CDN at pre-sized widths; no optimizer needed.
+    // Images are served pre-sized from our own /img route (worker.ts); no optimizer needed.
     unoptimized: true,
   },
   async redirects() {
@@ -19,18 +19,8 @@ const nextConfig: NextConfig = {
       { source: "/:path+", has: www, destination: "https://kanpp.tv/:path+", permanent: true },
     ];
   },
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-        ],
-      },
-    ];
-  },
+  // Security headers are added to every response in worker.ts (lib/edge/security-headers.ts):
+  // pages served from the ISR cache never pass through Next's header rules.
 };
 
 export default nextConfig;

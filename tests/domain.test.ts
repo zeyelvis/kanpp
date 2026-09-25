@@ -298,3 +298,15 @@ describe("source poster URLs", () => {
     expect(parseImagePath("/img/src/not-a-key.jpg")).toBeNull();
   });
 });
+
+describe("security headers", () => {
+  it("are added to every response without overriding what a route set", async () => {
+    const { withSecurityHeaders } = await import("@/lib/edge/security-headers");
+    const res = withSecurityHeaders(new Response("x", { status: 308, headers: { Location: "/a", "X-Frame-Options": "DENY" } }));
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("/a");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("Content-Security-Policy")).toContain("object-src 'none'");
+    expect(res.headers.get("Strict-Transport-Security")).toMatch(/max-age=\d+/);
+  });
+});
