@@ -2,7 +2,7 @@ import "server-only";
 import { cachedQuery, TAG } from "@/lib/data/cache";
 import { CARD_COLUMNS, CARD_JOIN, type TitleCard } from "@/lib/data/titles";
 import { getDb } from "@/lib/db/server";
-import type { Topic } from "@/lib/domain/topics";
+import { allTopics, type Topic } from "@/lib/domain/topics";
 
 export interface TopicData {
   count: number;
@@ -13,9 +13,10 @@ export interface TopicData {
   topRated: TitleCard[];
 }
 
-function filterSql(topic: Topic): { sql: string; params: (string | number)[] } {
-  const clauses = ["t.indexable = 1", "t.kind = ?"];
-  const params: (string | number)[] = [topic.kind];
+/** The topic's own conditions, beyond "indexable" and its kind. */
+function topicConditions(topic: Topic): { clauses: string[]; params: (string | number)[] } {
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
   if (topic.regions?.length) {
     clauses.push(`(${topic.regions.map(() => "t.countries LIKE ?").join(" OR ")})`);
     params.push(...topic.regions.map((r) => `%"${r}"%`));
@@ -28,7 +29,36 @@ function filterSql(topic: Topic): { sql: string; params: (string | number)[] } {
     clauses.push("t.year = ?");
     params.push(topic.year);
   }
-  return { sql: clauses.join(" AND "), params };
+  return { clauses, params };
+}
+
+function filterSql(topic: Topic): { sql: string; params: (string | number)[] } {
+  const own = topicConditions(topic);
+  return { sql: ["t.indexable = 1", "t.kind = ?", ...own.clauses].join(" AND "), params: [topic.kind, ...own.params] };
+}
+
+/**
+ * Title counts of every topic, for topics.xml. One scan per kind counts all of that kind's
+ * topics at once: D1 runs one query at a time, and a query per topic (80 scans) held the
+ * database long enough for other requests to time out.
+ */
+export function topicCounts(now = new Date().getFullYear()): Promise<Record<string, number>> {
+  return cachedQuery(["topic-counts", now], [TAG.related], 86400, async () => {
+    const db = await getDb();
+    const byKind = new Map<string, Topic[]>();
+    for (const t of allTopics(now)) byKind.set(t.kind, [...(byKind.get(t.kind) ?? []), t]);
+    const out: Record<string, number> = {};
+    for (const [kind, list] of byKind) {
+      const parts = list.map((t) => topicConditions(t));
+      const row = await db.first<Record<string, number | null>>(
+        `SELECT ${parts.map((p, i) => `SUM(${p.clauses.length ? p.clauses.join(" AND ") : "1"}) AS c${i}`).join(", ")}
+         FROM titles t WHERE t.indexable = 1 AND t.kind = ?`,
+        [...parts.flatMap((p) => p.params), kind],
+      );
+      list.forEach((t, i) => (out[t.name] = row?.[`c${i}`] ?? 0));
+    }
+    return out;
+  });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { absoluteUrl } from "@/lib/config/site";
 import { sitemapPeople } from "@/lib/data/people";
 import { recentSitemapTitles, sitemapTitles } from "@/lib/data/titles";
-import { topicData } from "@/lib/data/topics";
+import { topicCounts } from "@/lib/data/topics";
 import { allTopics, MIN_TOPIC_TITLES, topicPath } from "@/lib/domain/topics";
 import { KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
 import { personPath, titlePath } from "@/lib/domain/slug";
@@ -22,9 +22,8 @@ export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) 
 
   if (file === "topics.xml") {
     // Only topics with enough titles to be indexed.
-    const topics = allTopics();
-    const data = await Promise.all(topics.map((t) => topicData(t)));
-    const entries = topics.filter((_, i) => data[i].count >= MIN_TOPIC_TITLES).map((t) => ({ loc: absoluteUrl(topicPath(t)) }));
+    const counts = await topicCounts();
+    const entries = allTopics().filter((t) => (counts[t.name] ?? 0) >= MIN_TOPIC_TITLES).map((t) => ({ loc: absoluteUrl(topicPath(t)) }));
     return new Response(urlset(entries), { headers: XML_HEADERS });
   }
 

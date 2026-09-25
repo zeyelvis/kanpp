@@ -10,7 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "preview": "opennextjs-cloudflare build && node scripts/drop-build-prerenders.mjs && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && node scripts/drop-build-prerenders.mjs && opennextjs-cloudflare deploy",
+    "deploy": "opennextjs-cloudflare build && node scripts/drop-build-prerenders.mjs && opennextjs-cloudflare deploy && node scripts/warm-cache.mjs",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:migrate:local": "wrangler d1 migrations apply kanpp-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply kanpp-db --remote",
