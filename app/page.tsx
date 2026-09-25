@@ -11,7 +11,7 @@ import { shortDate } from "@/lib/domain/labels";
 import { titlePath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 600;
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },

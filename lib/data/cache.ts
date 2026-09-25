@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { isBuildPhase } from "@/lib/db/server";
 
 /**
  * Cache tags. Ingest invalidates them through POST /api/revalidate:
@@ -18,5 +19,7 @@ export const TAG = {
 
 /** One cached D1 read. Entries live in the OpenNext incremental cache (R2 + regional cache). */
 export function cachedQuery<T>(key: (string | number | null)[], tags: string[], revalidate: number, run: () => Promise<T>): Promise<T> {
+  // Build-time data is empty (see getDb) and must not be deployed as cache entries.
+  if (isBuildPhase) return run();
   return unstable_cache(run, key.map((k) => String(k)), { tags, revalidate })();
 }

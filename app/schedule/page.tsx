@@ -6,7 +6,7 @@ import { KIND_LABEL } from "@/lib/domain/kinds";
 import { titlePath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 1800;
 
 const DAYS = 14;
 const WEEKDAY = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];

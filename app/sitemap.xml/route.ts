@@ -2,7 +2,7 @@ import { absoluteUrl } from "@/lib/config/site";
 import { countIndexable } from "@/lib/data/titles";
 import { sitemapIndex, TITLES_PER_SITEMAP, XML_HEADERS } from "@/lib/seo/sitemap";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export async function GET() {
   const chunks = Math.max(1, Math.ceil((await countIndexable()) / TITLES_PER_SITEMAP));
