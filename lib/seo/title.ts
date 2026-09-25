@@ -3,7 +3,7 @@ import type { Season, TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel } from "@/lib/domain/labels";
 import { seasonPath, titlePath } from "@/lib/domain/slug";
-import { tmdbImage } from "@/lib/images";
+import { tmdbImageUrl } from "@/lib/images";
 
 function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, " ").trim();
@@ -37,10 +37,6 @@ function isoDuration(minutes: number | null): string | undefined {
 export function titleJsonLd(t: TitleDetail, seasons: Season[]) {
   const url = absoluteUrl(titlePath(t.kind, t.slug));
   const isSeries = t.tmdb_type === "tv";
-  const sameAs = [
-    t.tmdb_id ? `https://www.themoviedb.org/${t.tmdb_type}/${t.tmdb_id}` : null,
-    t.imdb_id ? `https://www.imdb.com/title/${t.imdb_id}/` : null,
-  ].filter(Boolean);
   const person = (name: string) => ({ "@type": "Person", name });
   const work: Record<string, unknown> = {
     "@type": isSeries ? "TVSeries" : "Movie",
@@ -48,14 +44,13 @@ export function titleJsonLd(t: TitleDetail, seasons: Season[]) {
     name: t.name,
     url,
     ...(t.original_name && t.original_name !== t.name ? { alternateName: t.original_name } : {}),
-    ...(t.poster_path ? { image: tmdbImage(t.poster_path, "w780") } : {}),
+    ...(t.poster_path ? { image: tmdbImageUrl(t.poster_path, "w780") } : {}),
     ...(t.overview ? { description: t.overview } : {}),
     ...(t.genres.length ? { genre: t.genres } : {}),
     ...(t.release_date ? { [isSeries ? "startDate" : "datePublished"]: t.release_date } : {}),
     ...(t.countries.length ? { countryOfOrigin: t.countries.map((c) => ({ "@type": "Country", name: countryLabel(c) })) } : {}),
     ...(t.languages[0] ? { inLanguage: t.languages[0] } : {}),
     ...(t.cast.length ? { actor: t.cast.slice(0, 8).map((c) => person(c.name)) } : {}),
-    ...(sameAs.length ? { sameAs } : {}),
   };
   const directors = t.crew.filter((c) => c.job === "导演").map((c) => person(c.name));
   if (directors.length) work.director = directors;

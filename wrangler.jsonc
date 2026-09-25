@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kanpp",
-  "main": ".open-next/worker.js",
+  // worker.ts serves /img/* itself and hands everything else to the OpenNext build.
+  "main": "worker.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // Only the real domains serve the site: a *.workers.dev copy would be duplicate content.
@@ -40,6 +41,11 @@
     {
       "binding": "NEXT_INC_CACHE_R2_BUCKET",
       "bucket_name": "kanpp-next-cache"
+    },
+    // Same-origin copies of TMDB images (lib/edge/image-proxy.ts).
+    {
+      "binding": "IMAGES",
+      "bucket_name": "kanpp-images"
     }
   ],
   // OpenNext queue for time-based (ISR) revalidation.

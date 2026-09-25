@@ -273,3 +273,18 @@ describe("trailingSeason", () => {
     expect(trailingSeason("Friends 2")).toBeNull();
   });
 });
+
+describe("same-origin images", () => {
+  it("accepts TMDB sizes and file names only", async () => {
+    const { parseImagePath } = await import("@/lib/edge/image-proxy");
+    expect(parseImagePath("/img/w342/i6fASFvO3mUceZJvipn4RiLHA44.jpg")).toEqual({ size: "w342", file: "i6fASFvO3mUceZJvipn4RiLHA44.jpg" });
+    expect(parseImagePath("/img/w9999/abcdefgh.jpg")).toBeNull();
+    expect(parseImagePath("/img/w342/../secret.jpg")).toBeNull();
+    expect(parseImagePath("/img/w342/abcdefgh.svg")).toBeNull();
+  });
+  it("builds page URLs on our own domain", async () => {
+    const { tmdbImage } = await import("@/lib/images");
+    expect(tmdbImage("/abc123.jpg", "w342")).toBe("/img/w342/abc123.jpg");
+    expect(tmdbImage(null, "w342")).toBeNull();
+  });
+});

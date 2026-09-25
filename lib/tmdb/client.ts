@@ -133,7 +133,3 @@ export const GENRE_ZH: Record<number, string> = {
   10759: "动作冒险", 10762: "儿童", 10763: "新闻", 10764: "真人秀", 10765: "科幻奇幻",
   10766: "肥皂剧", 10767: "脱口秀", 10768: "战争政治",
 };
-
-export function tmdbImage(path: string | null | undefined, size: "w185" | "w342" | "w500" | "w780" | "w1280" | "original"): string | null {
-  return path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
-}

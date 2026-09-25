@@ -7,7 +7,7 @@ import { absoluteUrl, site } from "@/lib/config/site";
 import { getPersonBySlug, personCredits, type PersonCredit, type PersonDetail } from "@/lib/data/people";
 import { KIND_LABEL, KINDS } from "@/lib/domain/kinds";
 import { decodeSlugParam, personPath } from "@/lib/domain/slug";
-import { tmdbImage } from "@/lib/images";
+import { tmdbImage, tmdbImageUrl } from "@/lib/images";
 
 // Rendered on first request, then served from the edge cache; each ingest marks it stale.
 export const revalidate = 86400;
@@ -91,9 +91,8 @@ export default async function PersonPage({ params }: PageProps<"/person/[slug]">
         "@id": `${absoluteUrl(path)}#person`,
         name: person.name,
         url: absoluteUrl(path),
-        ...(photo ? { image: photo } : {}),
+        ...(person.profile_path ? { image: tmdbImageUrl(person.profile_path, "w185") } : {}),
         ...(roles.length ? { jobTitle: roles.join("、") } : {}),
-        sameAs: [`https://www.themoviedb.org/person/${person.id}`],
       },
       {
         "@type": "BreadcrumbList",
