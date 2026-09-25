@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
+import { after } from "next/server";
 import { SearchBox } from "@/components/nav/SearchBox";
 import { PosterGrid } from "@/components/PosterCard";
+import { recordSearch } from "@/lib/data/search-log";
 import { featuredTitles, searchTitles } from "@/lib/data/titles";
 import { titlePath } from "@/lib/domain/slug";
 
@@ -16,6 +19,11 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   const raw = (await searchParams).q;
   const q = (Array.isArray(raw) ? raw[0] : raw ?? "").trim().slice(0, 50);
   const [results, hot] = await Promise.all([q ? searchTitles(q) : Promise.resolve([]), q ? Promise.resolve([]) : featuredTitles(12)]);
+  // Count searches people make (browsers send Sec-Fetch-Mode; crawlers and scripts mostly do
+  // not): the ones with no results are the catalog's to-do list. After the response is sent.
+  if (q && (await headers()).get("sec-fetch-mode") === "navigate") {
+    after(() => recordSearch(q, results.length).catch(() => undefined));
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-6 sm:pt-8">

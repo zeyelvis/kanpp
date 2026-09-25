@@ -472,3 +472,15 @@ describe("person page text", () => {
     );
   });
 });
+
+describe("search terms", () => {
+  it("stores a normalised term and drops links and noise", async () => {
+    const { storedSearchTerm } = await import("@/lib/domain/search-term");
+    expect(storedSearchTerm("  繁花  ")).toBe("繁花");
+    expect(storedSearchTerm("The  Bear")).toBe("the bear");
+    expect(storedSearchTerm("ＳＰＹ×ＦＡＭＩＬＹ")).toBe("spy×family");
+    expect(storedSearchTerm("https://evil.example")).toBeNull();
+    expect(storedSearchTerm("12345")).toBeNull();
+    expect(storedSearchTerm("长".repeat(40))).toHaveLength(30);
+  });
+});

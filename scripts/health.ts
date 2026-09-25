@@ -1,6 +1,7 @@
 /**
  * Daily health report for kanpp.tv: traffic and errors, crawler activity, D1 load (with the
- * heaviest queries), the SEO check, Bing, and catalog/playback numbers from the last 24 hours.
+ * heaviest queries), the SEO check, Bing, catalog/playback numbers from the last 24 hours,
+ * and last week's searches that found nothing, with the reason (the catalog's to-do list).
  *
  *   npx tsx scripts/health.ts [--notify] [--skip-seo]
  *
@@ -12,11 +13,20 @@ import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs, promisify } from "node:util";
-import { cloudflareApiToken, loadEnv, openDb } from "./lib/open-db";
+import type { Db } from "@/lib/db/types";
+import { normalizeKey } from "@/lib/domain/normalize";
+import { cloudflareApiToken, loadEnv, openDb, parseDbTarget } from "./lib/open-db";
 
 loadEnv();
 
-const { values: args } = parseArgs({ options: { notify: { type: "boolean", default: false }, "skip-seo": { type: "boolean", default: false } } });
+const { values: args } = parseArgs({
+  options: {
+    notify: { type: "boolean", default: false },
+    "skip-seo": { type: "boolean", default: false },
+    // Catalog numbers from another database (a local copy for testing); analytics are always live.
+    db: { type: "string", default: "remote" },
+  },
+});
 const ROOT = resolve(import.meta.dirname, "..");
 const SITE = "kanpp.tv";
 const SCRIPT = "kanpp";
@@ -143,8 +153,9 @@ async function workerAndD1(token: string, since: string, until: string) {
 }
 
 async function catalog() {
-  const db = openDb("remote");
-  const [counts, published, updates, playback, sources] = await Promise.all([
+  const db = openDb(parseDbTarget(args.db));
+  const [search, counts, published, updates, playback, sources] = await Promise.all([
+    searchGaps(db),
     db.all<{ key: string; value: string }>("SELECT key, value FROM sync_state WHERE key IN ('count:all', 'count:people')"),
     db.first<{ n: number }>("SELECT COUNT(*) AS n FROM titles WHERE published_at >= datetime('now', '-1 day')"),
     db.first<{ n: number; titles: number }>(
@@ -162,6 +173,7 @@ async function catalog() {
   const ok = playback?.ok ?? 0;
   const fail = playback?.fail ?? 0;
   return {
+    search,
     indexableTitles: value("count:all"),
     people: value("count:people"),
     publishedLast24h: published?.n ?? 0,
@@ -174,6 +186,68 @@ async function catalog() {
       bySource: sources.map((s) => ({ source: s.source_id, loads: s.ok + s.fail, successRate: s.ok + s.fail ? s.ok / (s.ok + s.fail) : null })),
     },
   };
+}
+
+interface SearchGap {
+  term: string;
+  searches: number;
+  /** Why the search found nothing, and what would fix it. */
+  finding: string;
+}
+
+/**
+ * Last week's searches, and the terms that found nothing with the reason: the title is in the
+ * catalog but not published, it is live but the term is not the start of its name, the term
+ * is a person, the sources carry it unmatched, or nobody has it. Also deletes rows past 90 days.
+ */
+async function searchGaps(db: Db): Promise<{ searches: number; misses: number; gaps: SearchGap[] }> {
+  await db.run("DELETE FROM search_terms WHERE day < date('now', '-90 days')");
+  const totals = await db.first<{ searches: number | null; misses: number | null }>(
+    `SELECT SUM(n) AS searches, SUM(CASE WHEN results = 0 THEN n ELSE 0 END) AS misses FROM search_terms WHERE day >= date('now', '-7 days')`,
+  );
+  const top = await db.all<{ term: string; n: number }>(
+    `SELECT term, SUM(n) AS n FROM search_terms WHERE day >= date('now', '-7 days') AND results = 0
+     GROUP BY term ORDER BY n DESC, term LIMIT 15`,
+  );
+  const gaps: SearchGap[] = [];
+  if (top.length) {
+    const like = top.map(() => "name LIKE ?").join(" OR ");
+    const patterns = top.map((t) => `%${t.term.replace(/[%_]/g, "")}%`);
+    // One scan each over titles and source rows for all terms together.
+    const [live, sources, people] = await Promise.all([
+      db.all<{ name: string }>(`SELECT name FROM titles WHERE indexable = 1 AND (${like}) LIMIT 300`, patterns),
+      db.all<{ vod_name: string; match_status: string }>(
+        `SELECT vod_name, match_status FROM source_items WHERE ${top.map(() => "vod_name LIKE ?").join(" OR ")} LIMIT 300`,
+        patterns,
+      ),
+      db.all<{ name: string; indexable: number }>(`SELECT name, indexable FROM people WHERE slug IN (${top.map(() => "?").join(",")})`, top.map((t) => t.term)),
+    ]);
+    for (const t of top) {
+      const key = normalizeKey(t.term);
+      const inCatalog = key
+        ? await db.all<{ name: string; status: string; indexable: number }>(
+            `SELECT t.name, t.status, t.indexable FROM aliases a JOIN titles t ON t.id = a.title_id
+             WHERE a.norm >= ? AND a.norm < ? LIMIT 3`,
+            [key, `${key}\u{10FFFF}`],
+          )
+        : [];
+      const contains = (name: string) => name.toLowerCase().includes(t.term);
+      const liveHits = live.filter((r) => contains(r.name)).slice(0, 3);
+      const person = people.find((p) => p.name.toLowerCase() === t.term);
+      const hidden = inCatalog.filter((r) => r.indexable !== 1);
+      const sourceHits = sources.filter((r) => contains(r.vod_name));
+      let finding: string;
+      if (liveHits.length) finding = `已上线，但搜索只认片名开头：${liveHits.map((r) => `《${r.name}》`).join("")}`;
+      else if (person) finding = `是影人名${person.indexable ? "（有影人页）" : ""}，搜索还不支持按人名找作品`;
+      else if (hidden.length) finding = `片库有但未上线：${hidden.map((r) => `《${r.name}》（${r.status === "active" ? "缺海报/简介/线路" : r.status}）`).join("")}`;
+      else if (sourceHits.length) {
+        const statuses = [...new Set(sourceHits.map((r) => r.match_status))].join("/");
+        finding = `采集源有 ${sourceHits.length} 条（${statuses}），片库还没收：${[...new Set(sourceHits.map((r) => r.vod_name))].slice(0, 3).join("、")}`;
+      } else finding = "片库和采集源都没有";
+      gaps.push({ term: t.term, searches: t.n, finding });
+    }
+  }
+  return { searches: totals?.searches ?? 0, misses: totals?.misses ?? 0, gaps };
 }
 
 async function seoCheck(): Promise<{ passed: boolean; summary: string }> {
@@ -230,11 +304,14 @@ async function main() {
   if (seo && !seo.passed) alerts.push(`SEO 巡检未通过：${seo.summary.split("\n").slice(-3).join(" / ")}`);
 
   const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, web, platform, catalog: cat, seo, bing: bingStats };
-  const dir = join(ROOT, "data/health");
-  mkdirSync(dir, { recursive: true });
-  const day = new Date(now.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-  writeFileSync(join(dir, `${day}.json`), JSON.stringify(report, null, 1));
-  writeFileSync(join(dir, "latest.json"), JSON.stringify(report, null, 1));
+  // Only real reports are kept: a run against a local copy (--db) is just printed.
+  if (args.db === "remote") {
+    const dir = join(ROOT, "data/health");
+    mkdirSync(dir, { recursive: true });
+    const day = new Date(now.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+    writeFileSync(join(dir, `${day}.json`), JSON.stringify(report, null, 1));
+    writeFileSync(join(dir, "latest.json"), JSON.stringify(report, null, 1));
+  }
 
   const w = platform.worker;
   const lines = [
@@ -246,6 +323,7 @@ async function main() {
     `  读取最多：${platform.queries.slice(0, 3).map((q) => `${n(q.rowsRead)} 行 / ${n(q.runs)} 次（平均 ${n(q.avgRows)}）${q.query.slice(0, 70)}`).join("\n            ")}`,
     `片库：可收录 ${n(cat.indexableTitles)} 部，影人 ${n(cat.people)} 位；近 24 小时新上线 ${n(cat.publishedLast24h)} 部，${n(cat.titlesUpdatedLast24h)} 部有新集数`,
     `播放（昨天）：${n(cat.playbackYesterday.loads)} 次，成功率 ${pct(cat.playbackYesterday.successRate)}${cat.playbackYesterday.avgFirstFrameMs ? `，首帧平均 ${n(cat.playbackYesterday.avgFirstFrameMs)}ms` : ""}`,
+    `搜索（近 7 天）：${n(cat.search.searches)} 次，没结果 ${n(cat.search.misses)} 次${cat.search.gaps.length ? `；补片清单：\n${cat.search.gaps.slice(0, 10).map((g) => `  - 「${g.term}」${g.searches} 次：${g.finding}`).join("\n")}` : ""}`,
     seo ? `SEO 巡检：${seo.passed ? "通过" : "未通过"}（${seo.summary.split("\n").at(-1)}）` : "SEO 巡检：跳过",
     bingStats ? `Bing：已收录 ${bingStats.inIndex}，近 7 天抓取 ${bingStats.crawledPagesLast7d} 页，展示 ${bingStats.impressionsLast7d}，点击 ${bingStats.clicksLast7d}` : "Bing：读取失败",
   ];
