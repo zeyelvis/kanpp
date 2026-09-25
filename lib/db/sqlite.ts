@@ -12,6 +12,9 @@ export function sqliteDb(path: string): Db & { close(): void; exec(sql: string):
     // Several ingest processes may write the same file (parallel source fetches).
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA busy_timeout = 30000");
+    // WAL + NORMAL: commits skip the fsync (only a power cut can lose the last ones). Ingest
+    // commits once per row, so FULL made the disk flush the bottleneck.
+    db.exec("PRAGMA synchronous = NORMAL");
   }
   const toRun = (r: { changes: number | bigint; lastInsertRowid: number | bigint }): RunResult => ({
     changes: Number(r.changes),
