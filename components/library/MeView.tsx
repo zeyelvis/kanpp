@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { clearHistory, formatClock, removeHistory, toggleFollow, useFollows, useHistory } from "@/lib/client/library";
+import { PushToggle } from "./PushToggle";
 import { isNextEpisodeAhead, shortDate } from "@/lib/domain/labels";
 import { titlePath, watchPath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
@@ -53,7 +54,9 @@ function FollowsTab() {
     );
   }
   return (
-    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <>
+      <PushToggle />
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {rows.map(({ f, c, updated }) => (
         <li key={f.id} className="flex gap-3 rounded-xl bg-surface p-2 ring-1 ring-line">
           <Link href={titlePath(f.kind, f.slug)} className="shrink-0">
@@ -82,7 +85,8 @@ function FollowsTab() {
           </div>
         </li>
       ))}
-    </ul>
+      </ul>
+    </>
   );
 }
 
@@ -163,7 +167,9 @@ export function MeView({ tab }: { tab: "follows" | "history" }) {
         ))}
       </div>
       {tab === "history" ? <HistoryTab /> : <FollowsTab />}
-      <p className="mt-10 text-xs text-faint">追剧和观看记录只保存在这台设备的浏览器里，清除浏览器数据后会丢失。</p>
+      <p className="mt-10 text-xs text-faint">
+        追剧和观看记录只保存在这台设备的浏览器里，清除浏览器数据后会丢失。开启更新提醒后，追剧列表会同步一份到服务器，用来判断给你发哪些提醒。
+      </p>
     </div>
   );
 }

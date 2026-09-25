@@ -1,7 +1,8 @@
 import type { MetadataRoute } from "next";
 import { site } from "@/lib/config/site";
 
-// Installable on phones (add to home screen). No service worker: pages are always fresh.
+// Installable on phones (add to home screen). The only service worker (public/sw.js) shows
+// update reminders and has no fetch handler: pages are always fresh.
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: `${site.name} - ${site.tagline}`,

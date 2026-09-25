@@ -25,10 +25,12 @@ function rowDate(r: UpdateRow): string {
   return new Date(seen.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 }
 
-function entryText(label: string, episode: number | null): string {
-  if (FINISHED.test(label)) return label;
-  if (episode != null) return `更新到第${episode}集`;
-  return `更新为「${label}」`;
+/** "更新到第12集", "全16集", "更新为「HD」": how a new label reads in the history and in reminders. */
+export function describeUpdate(label: string): string {
+  const trimmed = label.trim();
+  if (FINISHED.test(trimmed)) return trimmed;
+  const episode = latestEpisodeNumber(trimmed);
+  return episode != null ? `更新到第${episode}集` : `更新为「${trimmed}」`;
 }
 
 /**
@@ -54,7 +56,7 @@ export function updateTimeline(rowsNewestFirst: UpdateRow[], limit = 12): Update
     if (episode != null) maxEpisode = Math.max(maxEpisode ?? 0, episode);
     if (!forward) continue;
     if (isFinished) finished = true;
-    out.push({ date: rowDate(r), text: entryText(label, episode), episode });
+    out.push({ date: rowDate(r), text: describeUpdate(label), episode });
   }
   return out.reverse().slice(0, limit);
 }

@@ -29,3 +29,6 @@ echo "=== $(date -u +%FT%TZ) ingest end (exit $?)"
 # script already holds the ingest lock, hence --no-lock).
 caffeinate -i npx tsx scripts/source-titles.ts --db=remote --no-lock
 echo "=== $(date -u +%FT%TZ) source titles end (exit $?)"
+# Update reminders for followed titles that just got new episodes (scripts/push-updates.ts).
+caffeinate -i npx tsx scripts/push-updates.ts
+echo "=== $(date -u +%FT%TZ) push reminders end (exit $?)"

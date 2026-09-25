@@ -516,3 +516,33 @@ describe("player skip marks and speed", () => {
     expect(stepRate(0.75, -1)).toBe(0.75);
   });
 });
+
+describe("update reminders", () => {
+  it("accepts only real push service endpoints and keys", async () => {
+    const { isPushEndpoint, isPushKey } = await import("@/lib/domain/push");
+    expect(isPushEndpoint("https://fcm.googleapis.com/fcm/send/abc:APA91b")).toBe(true);
+    expect(isPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/gAAAA")).toBe(true);
+    expect(isPushEndpoint("https://web.push.apple.com/QGuQ")).toBe(true);
+    expect(isPushEndpoint("https://wns2-by3p.notify.windows.com/w/?token=x")).toBe(true);
+    expect(isPushEndpoint("https://evil.example/fcm.googleapis.com")).toBe(false);
+    expect(isPushEndpoint("http://fcm.googleapis.com/x")).toBe(false);
+    expect(isPushEndpoint("https://fcm.googleapis.com.evil.example/x")).toBe(false);
+    expect(isPushKey("BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", 80, 100)).toBe(true);
+    expect(isPushKey("not base64!", 5, 100)).toBe(false);
+  });
+
+  it("names one title, summarises several", async () => {
+    const { updateMessage } = await import("@/lib/domain/push");
+    expect(updateMessage([{ name: "繁花", label: "更新至12集", path: "/tv/繁花-2023" }])).toEqual({
+      title: "《繁花》更新到第12集", body: "点这里接着看", url: "/tv/繁花-2023", tag: "title:/tv/繁花-2023",
+    });
+    const many = updateMessage([
+      { name: "甲", label: "第3集", path: "/a" }, { name: "乙", label: "全16集", path: "/b" },
+      { name: "丙", label: "第9集", path: "/c" }, { name: "丁", label: "第1集", path: "/d" },
+    ]);
+    expect(many?.title).toBe("你追的 4 部剧更新了");
+    expect(many?.body).toBe("《甲》更新到第3集，《乙》全16集，《丙》更新到第9集等");
+    expect(many?.url).toBe("/me");
+    expect(updateMessage([])).toBeNull();
+  });
+});

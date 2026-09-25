@@ -111,13 +111,17 @@ export function lastWatched(id: number): HistoryEntry | null {
 
 export function toggleFollow(title: TitleRef & { latestLabel: string | null }): boolean {
   const list = read<FollowEntry>(FOLLOW_KEY);
-  if (list.some((f) => f.id === title.id)) {
-    write(FOLLOW_KEY, list.filter((f) => f.id !== title.id));
-    return false;
-  }
+  const following = !list.some((f) => f.id === title.id);
   const { latestLabel, ...ref } = title;
-  write(FOLLOW_KEY, [{ ...ref, seenLabel: latestLabel, at: Date.now() }, ...list].slice(0, MAX_FOLLOWS));
-  return true;
+  const next = following ? [{ ...ref, seenLabel: latestLabel, at: Date.now() }, ...list].slice(0, MAX_FOLLOWS) : list.filter((f) => f.id !== title.id);
+  write(FOLLOW_KEY, next);
+  // Update reminders, when on, need the new list (loaded on demand: most visitors never use them).
+  void import("./push").then((m) => m.syncPushFollows(next.map((f) => f.id))).catch(() => undefined);
+  return following;
+}
+
+export function followIds(): number[] {
+  return read<FollowEntry>(FOLLOW_KEY).map((f) => f.id);
 }
 
 /** Mark a followed title's current update as seen (called when its page is opened). */

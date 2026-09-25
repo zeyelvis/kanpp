@@ -4,7 +4,7 @@ import { site } from "@/lib/config/site";
 export const dynamic = "force-static";
 
 const EMAIL = `dmca@${site.domain}`;
-const UPDATED = "2026 年 9 月 25 日";
+const UPDATED = "2026 年 9 月 26 日";
 
 export const metadata: Metadata = {
   title: "隐私政策",
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-ink">只保存在你设备上的数据</h2>
-        <p>观看记录（看到第几集、第几分钟）和追剧列表保存在你浏览器的本地存储里，不会上传到我们的服务器。清除浏览器的网站数据即可全部删除。</p>
+        <p>观看记录（看到第几集、第几分钟）和追剧列表保存在你浏览器的本地存储里，不会上传到我们的服务器（你主动开启更新提醒时除外，见下文）。清除浏览器的网站数据即可全部删除。</p>
       </section>
 
       <section className="space-y-3">
@@ -31,9 +31,16 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-2 pl-6">
           <li>访问网页时，我们的服务器与网络提供商 Cloudflare 会处理你的 IP 地址、浏览器类型等请求信息，用于提供页面和防护攻击。</li>
           <li>打开「我的」页面时，浏览器会把你追的作品编号发给服务器，以取回最新的更新信息；请求里不包含任何身份信息。</li>
-          <li>在搜索框输入时，关键词会发给服务器，用来返回联想结果。</li>
+          <li>在搜索框输入时，关键词会发给服务器，用来返回联想结果。提交搜索后，我们按「日期 × 关键词」保存搜索次数和结果数量，用来发现片库缺少的作品；不保存 IP 或任何能识别你的信息，90 天后删除。</li>
           <li>播放时，播放器会告诉服务器「某条线路能否播放、首帧加载用了多久」。我们只按「日期 × 国家 × 线路」保存汇总次数，用来把各地最稳定的线路排在前面；国家由 Cloudflare 根据 IP 判断，我们不保存 IP 或任何能识别你的信息。</li>
         </ul>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-ink">更新提醒（自愿开启）</h2>
+        <p>
+          在「我的追剧」里开启更新提醒后，你的浏览器会生成一个推送地址（由 Google、Mozilla、Apple 或 Microsoft 的推送服务提供）。我们保存这个地址、对应的加密密钥和你追的作品编号，只用来在这些作品出新集时给这台设备发通知。关闭提醒，或推送服务告知地址已失效时，这些数据会被删除。通知内容经由对应的推送服务送达。
+        </p>
       </section>
 
       <section className="space-y-3">
