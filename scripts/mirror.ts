@@ -21,7 +21,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 import type { SqlValue, Statement } from "@/lib/db/types";
 import { loadEnv, openDb } from "./lib/open-db";
-import { notifySite } from "./lib/revalidate";
+import { announceTitles, notifySite } from "./lib/revalidate";
 
 loadEnv();
 
@@ -154,9 +154,18 @@ async function push() {
   const snapCounts = counts(db, "snap");
   const snapMaxId = (db.prepare("SELECT COALESCE(MAX(id), 0) AS n FROM snap.titles").get() as { n: number }).n;
   const { plans, changedTitleIds } = planPush(db);
+  // Pages worth announcing: newly indexable, or showing a new episode label.
+  const announce = (
+    db
+      .prepare(
+        `SELECT m.id FROM main.titles m LEFT JOIN snap.titles s ON s.id = m.id
+         WHERE m.indexable = 1 AND (s.id IS NULL OR s.indexable <> 1 OR s.latest_label IS NOT m.latest_label)`,
+      )
+      .all() as { id: number }[]
+  ).map((r) => r.id);
   const created = changedTitleIds.filter((id) => id > snapMaxId).length;
   for (const p of plans) log(`${p.table}: ${p.rows} changed rows, ${p.files.length} files, ${p.large.length} large`);
-  log(`titles: ${created} new, ${changedTitleIds.length - created} updated`);
+  log(`titles: ${created} new, ${changedTitleIds.length - created} updated, ${announce.length} to announce`);
   if (args["dry-run"]) return;
 
   const remote = openDb("remote");
@@ -185,6 +194,7 @@ async function push() {
   // New titles were never cached (only as 404s, which `created` clears); updated ones were.
   const updated = changedTitleIds.filter((id) => id <= snapMaxId);
   log(`revalidate: ${await notifySite({ titleIds: updated, created: created > 0, catalog: true })}`);
+  log(`indexnow: ${await announceTitles(remote, announce)}`);
 
   db.exec("DETACH snap");
   if (args.keep) {

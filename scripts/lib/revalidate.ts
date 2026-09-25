@@ -1,4 +1,8 @@
 import { site } from "@/lib/config/site";
+import type { Db } from "@/lib/db/types";
+import { titlePath } from "@/lib/domain/slug";
+import type { Kind } from "@/lib/domain/kinds";
+import { submitIndexNow } from "@/lib/seo/indexnow";
 
 /**
  * Tells the live site which cached pages/data are stale after an ingest run. Skipped when no
@@ -22,4 +26,19 @@ export async function notifySite(payload: { titleIds: number[]; created: boolean
     if (!res.ok) break;
   }
   return results.join(",");
+}
+
+/** Submits the canonical detail URLs of the given titles to IndexNow. */
+export async function announceTitles(db: Db, titleIds: number[]): Promise<string> {
+  const paths: string[] = [];
+  for (let i = 0; i < titleIds.length; i += 500) {
+    const ids = titleIds.slice(i, i + 500);
+    const rows = await db.all<{ kind: Kind; slug: string }>(
+      `SELECT t.kind, s.slug FROM titles t JOIN slugs s ON s.title_id = t.id AND s.is_canonical = 1
+       WHERE t.indexable = 1 AND t.id IN (${ids.map(() => "?").join(",")})`,
+      ids,
+    );
+    paths.push(...rows.map((r) => titlePath(r.kind, r.slug)));
+  }
+  return submitIndexNow(paths);
 }

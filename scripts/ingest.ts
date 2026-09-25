@@ -22,7 +22,7 @@ import { fetchCmsPage } from "@/lib/sources/cms";
 import { SOURCES, type CmsSource } from "@/lib/sources/registry";
 import { TmdbClient } from "@/lib/tmdb/client";
 import { loadEnv, openDb, parseDbTarget } from "./lib/open-db";
-import { notifySite } from "./lib/revalidate";
+import { announceTitles, notifySite } from "./lib/revalidate";
 
 loadEnv();
 
@@ -125,6 +125,7 @@ async function main() {
 
   if (target === "remote") {
     log(`revalidate: ${await notifySite({ titleIds: [...touched], created, catalog: true })}`);
+    log(`indexnow: ${await announceTitles(db, published.changed)}`);
   }
 }
 

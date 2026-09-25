@@ -103,5 +103,18 @@ describe("registry invariants", () => {
     expect(rows.map((r) => r.indexable)).toEqual([1, 0, 0]);
     expect(rows[0].published_at).not.toBeNull();
     expect(rows[0].latest_label).toBe("HD");
+    expect(res.changed).toEqual([good]);
+  });
+
+  it("reports a published page as changed only when it gets a new episode label", async () => {
+    const id = await insertTitle(db, "漫长的季节", 2023);
+    await db.run(
+      "INSERT INTO source_items (source_id, vod_id, vod_name, match_status, title_id, episode_count, vod_time, remarks) VALUES ('feifan', '1', 'x', 'matched', ?, 1, '2026-09-24 10:00:00', '更新至第1集')",
+      [id],
+    );
+    expect((await refreshTitles(db, [id])).changed).toEqual([id]); // newly published
+    expect((await refreshTitles(db, [id])).changed).toEqual([]); // nothing new
+    await db.run("UPDATE source_items SET remarks = '更新至第2集', vod_time = '2026-09-25 10:00:00' WHERE title_id = ?", [id]);
+    expect((await refreshTitles(db, [id])).changed).toEqual([id]);
   });
 });

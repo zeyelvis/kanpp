@@ -27,6 +27,8 @@ interface TitleRow {
   status: string;
   poster_path: string | null;
   overview: string | null;
+  indexable: number;
+  latest_label: string | null;
 }
 
 /**
@@ -34,26 +36,38 @@ interface TitleRow {
  * A title is indexable only when it is active, has a clean Chinese name, a poster, a real
  * synopsis and at least one playable HLS line. Everything else stays out of search engines.
  */
-export async function refreshTitles(db: Db, titleIds: Iterable<number>, concurrency = 8): Promise<{ refreshed: number; indexable: number }> {
+export async function refreshTitles(
+  db: Db,
+  titleIds: Iterable<number>,
+  concurrency = 8,
+): Promise<{ refreshed: number; indexable: number; changed: number[] }> {
   let refreshed = 0;
   let indexable = 0;
+  const changed: number[] = [];
   const queue = [...titleIds];
   // Four queries per title: over D1's HTTP API they are round trips, so run a few titles at once.
   const worker = async () => {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
-      const ok = await refreshTitle(db, id);
-      if (ok === null) continue;
+      const result = await refreshTitle(db, id);
+      if (!result) continue;
       refreshed++;
-      if (ok) indexable++;
+      if (result.indexable) indexable++;
+      if (result.changed) changed.push(id);
     }
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
-  return { refreshed, indexable };
+  return { refreshed, indexable, changed };
 }
 
-/** Returns whether the title is now indexable, or null when it does not exist. */
-async function refreshTitle(db: Db, id: number): Promise<boolean | null> {
-  const t = await db.first<TitleRow>("SELECT id, name, status, poster_path, overview FROM titles WHERE id = ?", [id]);
+/**
+ * `changed`: the page is indexable and either newly so or showing a new episode label, i.e.
+ * worth announcing to search engines. Null when the title does not exist.
+ */
+async function refreshTitle(db: Db, id: number): Promise<{ indexable: boolean; changed: boolean } | null> {
+  const t = await db.first<TitleRow>(
+    "SELECT id, name, status, poster_path, overview, indexable, latest_label FROM titles WHERE id = ?",
+    [id],
+  );
   if (!t) return null;
   const latest = await db.first<{ remarks: string | null; vod_time: string | null }>(
     `SELECT remarks, vod_time FROM source_items WHERE title_id = ? AND match_status = 'matched'
@@ -78,5 +92,5 @@ async function refreshTitle(db: Db, id: number): Promise<boolean | null> {
      WHERE id = ?`,
     [latest?.remarks ?? null, latest?.vod_time ?? null, ok ? 1 : 0, ok ? 1 : 0, id],
   );
-  return ok;
+  return { indexable: ok, changed: ok && (t.indexable !== 1 || t.latest_label !== (latest?.remarks ?? null)) };
 }
