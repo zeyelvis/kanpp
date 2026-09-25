@@ -407,3 +407,23 @@ describe("markdown negotiation", () => {
     expect(prefersMarkdown(null)).toBe(false);
   });
 });
+
+describe("API abuse guards", () => {
+  it("keys IPv6 clients by their /64", async () => {
+    const { clientKey } = await import("@/lib/edge/rate-limit");
+    expect(clientKey("203.0.113.9")).toBe("203.0.113.9");
+    expect(clientKey("2001:db8:1:2:aaaa:bbbb:cccc:dddd")).toBe("2001:db8:1:2::/64");
+    expect(clientKey("2001:db8::1")).toBe("2001:db8::/64");
+    expect(clientKey(null)).toBe("unknown");
+  });
+
+  it("counts beacons only from our own pages", async () => {
+    const { sentFromOwnPage } = await import("@/lib/edge/rate-limit");
+    const req = (headers: Record<string, string>) => new Request("https://kanpp.tv/api/beacon", { method: "POST", headers });
+    expect(sentFromOwnPage(req({ "sec-fetch-site": "same-origin" }))).toBe(true);
+    expect(sentFromOwnPage(req({ "sec-fetch-site": "cross-site", origin: "https://kanpp.tv" }))).toBe(false);
+    expect(sentFromOwnPage(req({ origin: "https://kanpp.tv" }))).toBe(true);
+    expect(sentFromOwnPage(req({ origin: "https://evil.example" }))).toBe(false);
+    expect(sentFromOwnPage(req({}))).toBe(false);
+  });
+});

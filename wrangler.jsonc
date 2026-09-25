@@ -63,6 +63,11 @@
       "new_sqlite_classes": ["DOQueueHandler"]
     }
   ],
+  // Per-visitor API limits (lib/edge/rate-limit.ts). namespace_id: any number unique in the account.
+  "ratelimits": [
+    { "name": "RL_BEACON", "namespace_id": "4201", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_API", "namespace_id": "4202", "simple": { "limit": 120, "period": 60 } }
+  ],
   "observability": {
     "enabled": true
   }

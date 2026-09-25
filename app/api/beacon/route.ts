@@ -1,4 +1,5 @@
 import { recordPlayback, viewerCountry } from "@/lib/data/playback";
+import { sentFromOwnPage } from "@/lib/edge/rate-limit";
 import { getSource } from "@/lib/sources/registry";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
  * Stored only as daily counts per country and line.
  */
 export async function POST(req: Request) {
+  // Reports only count from our own player; worker.ts also rate-limits this route per visitor.
+  if (!sentFromOwnPage(req)) return new Response(null, { status: 403 });
   if (Number(req.headers.get("content-length") ?? 0) > 1024) return new Response(null, { status: 413 });
   let body: { line?: unknown; ok?: unknown; ms?: unknown };
   try {
