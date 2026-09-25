@@ -8,6 +8,7 @@
  * a candidate is used only when it is clean (lib/ingest/overview.ts) and at least 20
  * characters longer. Later TMDB refreshes never shorten it again (upsertTitleFromTmdb).
  */
+import { mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { Db, Statement } from "@/lib/db/types";
 import { bestSynopsis } from "@/lib/ingest/overview";
@@ -128,6 +129,7 @@ async function main() {
 
   const updates: Statement[] = [];
   const changed: number[] = [];
+  const log_: { id: number; before: string; after: string }[] = [];
   let viaTmdb = 0;
   for (const t of list) {
     const current = t.overview ?? "";
@@ -136,10 +138,17 @@ async function main() {
     if (!best || best.length < current.length + 20) continue;
     if (tmdbText && best === bestSynopsis([tmdbText])) viaTmdb++;
     changed.push(t.id);
+    log_.push({ id: t.id, before: current, after: best });
     updates.push({ sql: "UPDATE titles SET overview = ?, updated_at = datetime('now') WHERE id = ?", params: [best, t.id] });
   }
   log(`fuller synopsis for ${changed.length} of ${list.length} titles (${viaTmdb} from TMDB translations, the rest from sources)`);
+  for (const c of [...log_].sort(() => Math.random() - 0.5).slice(0, 8)) log(`  #${c.id}  ${c.before.slice(0, 30)} → ${c.after.slice(0, 80)}`);
   if (args["dry-run"]) return;
+  // Every replaced synopsis is kept, so a run can be reviewed and rolled back.
+  mkdirSync("data", { recursive: true });
+  const backup = `data/enrich-overviews-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  writeFileSync(backup, JSON.stringify(log_, null, 1));
+  log(`backup of the old synopses: ${backup}`);
   await chunks(updates, 50, async (chunk) => void (await db.batch(chunk)));
 
   const left = await db.first<{ under30: number; under60: number }>(
