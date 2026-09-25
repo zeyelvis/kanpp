@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Kind } from "@/lib/domain/kinds";
 import { titlePath, watchPath } from "@/lib/domain/slug";
-import { tmdbImage } from "@/lib/images";
+import { tmdbImage, tmdbSrcSet } from "@/lib/images";
 
 export interface HeroSlide {
   id: number;
@@ -63,6 +63,8 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
             <div className="relative h-[62vw] max-h-[560px] min-h-[240px] w-full sm:h-[480px]">
               <img
                 src={tmdbImage(s.backdrop, "w1280")!}
+                srcSet={tmdbSrcSet(s.backdrop, ["w780", "w1280"])}
+                sizes="100vw"
                 alt=""
                 loading={i === 0 ? "eager" : "lazy"}
                 fetchPriority={i === 0 ? "high" : "auto"}

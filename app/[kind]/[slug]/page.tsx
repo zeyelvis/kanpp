@@ -19,7 +19,7 @@ import { getLines, getSeasons, getUpdates, relatedTitles, type Line, type TitleD
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { personPath, playFragment, seasonPath, titlePath } from "@/lib/domain/slug";
-import { tmdbImage } from "@/lib/images";
+import { tmdbImage, tmdbSrcSet } from "@/lib/images";
 import { describeTitle, pageTitle, titleFacts, titleJsonLd } from "@/lib/seo/title";
 
 // Rendered on first request, then served from the edge cache (ISR). Ingest invalidates the
@@ -221,7 +221,7 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
             ]}
           />
         </div>
-        <WatchStage title={titleRef} backdrop={backdrop} poster={poster} playable={lines.length > 0} header={header} panel={panel} />
+        <WatchStage title={titleRef} backdrop={backdrop} backdropSrcSet={tmdbSrcSet(t.backdrop_path, ["w780", "w1280"])} poster={poster} playable={lines.length > 0} header={header} panel={panel} />
       </div>
 
       <section className="mx-auto mt-10 grid max-w-7xl gap-6 px-4 lg:grid-cols-[minmax(0,1fr)_320px]">

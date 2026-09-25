@@ -38,6 +38,7 @@ function Spinner() {
 interface Props {
   title: TitleRef & { latestLabel: string | null };
   backdrop: string | null;
+  backdropSrcSet?: string;
   /** Shown (letterboxed) when there is no 16:9 backdrop, e.g. titles built from source data. */
   poster?: string | null;
   playable: boolean;
@@ -52,7 +53,7 @@ interface Props {
  * server-rendered episode list; pressing play, following an episode link (#s=&ep=) or arriving
  * with a fragment (continue-watching links, old /watch/ URLs) mounts the player in place.
  */
-export function WatchStage({ title, backdrop, poster = null, playable, header, panel }: Props) {
+export function WatchStage({ title, backdrop, backdropSrcSet, poster = null, playable, header, panel }: Props) {
   const hash = useHash();
   const [clicked, setClicked] = useState(false);
   const [fromHash, setFromHash] = useState(false);
@@ -114,7 +115,15 @@ export function WatchStage({ title, backdrop, poster = null, playable, header, p
       <div className="order-1 -mx-4 sm:mx-0 lg:col-start-1 lg:row-start-1">
         <div className="relative aspect-video overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
           {backdrop ? (
-            <img src={backdrop} alt={`${title.name}剧照`} fetchPriority="high" className="size-full object-cover opacity-80" />
+            <img
+              src={backdrop}
+              srcSet={backdropSrcSet}
+              // Full width below lg; beside the 340px panel inside max-w-7xl from lg up.
+              sizes="(min-width: 1280px) 884px, (min-width: 1024px) calc(100vw - 396px), 100vw"
+              alt={`${title.name}剧照`}
+              fetchPriority="high"
+              className="size-full object-cover opacity-80"
+            />
           ) : poster ? (
             <>
               <img src={poster} alt="" aria-hidden className="absolute inset-0 size-full scale-110 object-cover opacity-40 blur-2xl" />
