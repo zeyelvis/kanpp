@@ -40,6 +40,19 @@ export function parseDbTarget(raw: string | undefined): DbTarget {
   return "local";
 }
 
+/** A token for the Cloudflare API (GraphQL analytics): CI's API token, else wrangler's login. */
+export function cloudflareApiToken(): string {
+  if (process.env.CLOUDFLARE_API_TOKEN) return process.env.CLOUDFLARE_API_TOKEN;
+  try {
+    execFileSync("npx", ["wrangler", "whoami"], { cwd: ROOT, stdio: "ignore", timeout: 60_000 });
+  } catch {
+    // Offline: the API call reports the real error.
+  }
+  const token = wranglerOAuthToken();
+  if (!token) throw new Error("no CLOUDFLARE_API_TOKEN and no wrangler login");
+  return token;
+}
+
 export function openDb(target: DbTarget): Db {
   if (target === "local") return sqliteDb(localD1Path());
   if (target.startsWith("file:")) return sqliteDb(resolve(ROOT, target.slice(5)));

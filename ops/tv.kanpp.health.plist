@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Daily health report at 09:10 (a missed run happens at the next wake).
+     Install:   cp ops/tv.kanpp.health.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/tv.kanpp.health.plist
+     Uninstall: launchctl unload ~/Library/LaunchAgents/tv.kanpp.health.plist && rm ~/Library/LaunchAgents/tv.kanpp.health.plist
+     Logs:      ~/Library/Logs/kanpp-health.log -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>tv.kanpp.health</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/zeyelvis/kanpp/ops/run-health.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/zeyelvis/Library/Logs/kanpp-health.log</string>
+  <key>StandardErrorPath</key><string>/Users/zeyelvis/Library/Logs/kanpp-health.log</string>
+</dict>
+</plist>
