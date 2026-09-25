@@ -11,6 +11,8 @@ export async function GET() {
   const personChunks = Math.ceil(people / TITLES_PER_SITEMAP);
   const locs = [
     absoluteUrl("/sitemaps/pages.xml"),
+    // Recently updated titles first (also listed in titles-N): fresh episodes get re-crawled.
+    absoluteUrl("/sitemaps/recent.xml"),
     ...Array.from({ length: chunks }, (_, i) => absoluteUrl(`/sitemaps/titles-${i}.xml`)),
     ...Array.from({ length: personChunks }, (_, i) => absoluteUrl(`/sitemaps/people-${i}.xml`)),
   ];

@@ -13,6 +13,24 @@ Allow: /
 Disallow: /search
 Disallow: /me
 Disallow: /api/
+# Filtered channel listings are noindex; crawling them only spends the crawl budget.
+# Plain pagination (?page=N) stays crawlable.
+Disallow: /*?*genre=
+Disallow: /*?*region=
+Disallow: /*?*year=
+Disallow: /*?*sort=
+
+# SEO-tool crawlers: no search or AI-answer value for visitors, only load.
+User-Agent: AhrefsBot
+User-Agent: SemrushBot
+User-Agent: MJ12bot
+User-Agent: DotBot
+User-Agent: BLEXBot
+User-Agent: DataForSeoBot
+User-Agent: Barkrowler
+User-Agent: serpstatbot
+User-Agent: SeekportBot
+Disallow: /
 
 Sitemap: ${absoluteUrl("/sitemap.xml")}
 `;

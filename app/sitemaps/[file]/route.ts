@@ -1,6 +1,6 @@
 import { absoluteUrl } from "@/lib/config/site";
 import { sitemapPeople } from "@/lib/data/people";
-import { sitemapTitles } from "@/lib/data/titles";
+import { recentSitemapTitles, sitemapTitles } from "@/lib/data/titles";
 import { KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
 import { personPath, titlePath } from "@/lib/domain/slug";
 import { lastModified, TITLES_PER_SITEMAP, urlset, XML_HEADERS } from "@/lib/seo/sitemap";
@@ -16,6 +16,12 @@ export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) 
   if (file === "pages.xml") {
     const locs = ["/", "/schedule", ...KINDS.map((k) => `/${KIND_SEGMENT[k]}`)].map((p) => ({ loc: absoluteUrl(p) }));
     return new Response(urlset(locs), { headers: XML_HEADERS });
+  }
+
+  if (file === "recent.xml") {
+    const rows = await recentSitemapTitles(5000);
+    const entries = rows.map((r) => ({ loc: absoluteUrl(titlePath(r.kind, r.slug)), lastmod: lastModified(r.updated_at, r.source_updated_at) }));
+    return new Response(urlset(entries), { headers: XML_HEADERS });
   }
 
   const people = file.match(/^people-(\d{1,4})\.xml$/);

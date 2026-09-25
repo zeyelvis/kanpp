@@ -109,7 +109,8 @@ async function sitemapUrls(): Promise<string[]> {
     if (res.status !== 200) fail(child, "status", String(res.status));
     urls.push(...[...res.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1].replace(/&amp;/g, "&")).pathname));
   }
-  return urls;
+  // recent.xml repeats titles that are also in titles-N.
+  return [...new Set(urls)];
 }
 
 async function main() {

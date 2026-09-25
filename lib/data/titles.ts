@@ -328,6 +328,19 @@ export function sitemapTitles(offset: number, limit: number): Promise<SitemapEnt
   ));
 }
 
+/**
+ * Titles whose sources changed in the last two weeks, newest first: a small sitemap with
+ * accurate lastmod so new episodes and new titles are re-crawled quickly.
+ */
+export function recentSitemapTitles(limit: number): Promise<SitemapEntry[]> {
+  return cachedQuery(["sitemap-recent", limit], [TAG.catalog], 3600, async () => (await getDb()).all<SitemapEntry>(
+    `SELECT t.kind, s.slug, t.updated_at, t.source_updated_at ${CARD_JOIN}
+     WHERE t.indexable = 1 AND t.source_updated_at >= datetime('now', '-14 days')
+     ORDER BY t.source_updated_at DESC LIMIT ?`,
+    [limit],
+  ));
+}
+
 export function countIndexable(): Promise<number> {
   return storedCount("all", "SELECT COUNT(*) AS n FROM titles WHERE indexable = 1", []);
 }
