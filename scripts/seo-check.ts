@@ -75,7 +75,8 @@ async function checkIndexablePage(path: string, opts: { jsonLd: boolean }): Prom
       try {
         const data = JSON.parse(b[1]);
         const types = (data["@graph"] ?? [data]).map((n: { "@type": string }) => n["@type"]);
-        if (!types.some((t: string) => t === "Movie" || t === "TVSeries")) fail(path, "json-ld", `no Movie/TVSeries node (${types.join(",")})`);
+        const expected = path.startsWith("/person/") ? ["Person"] : ["Movie", "TVSeries"];
+        if (!types.some((t: string) => expected.includes(t))) fail(path, "json-ld", `no ${expected.join("/")} node (${types.join(",")})`);
       } catch (err) {
         fail(path, "json-ld", `invalid JSON: ${(err as Error).message}`);
       }

@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 import type { SqlValue, Statement } from "@/lib/db/types";
+import { personPath } from "@/lib/domain/slug";
 import { loadEnv, openDb } from "./lib/open-db";
 import { announceTitles, notifySite } from "./lib/revalidate";
 
@@ -193,6 +194,14 @@ async function pushPaused() {
       )
       .all() as { id: number }[]
   ).map((r) => r.id);
+  const announcePeople = (
+    db
+      .prepare(
+        `SELECT m.slug FROM main.people m LEFT JOIN snap.people s ON s.id = m.id
+         WHERE m.indexable = 1 AND (s.id IS NULL OR s.indexable <> 1)`,
+      )
+      .all() as { slug: string }[]
+  ).map((r) => personPath(r.slug));
 
   if (args["dry-run"]) {
     for (const t of TABLES) {
@@ -200,7 +209,7 @@ async function pushPaused() {
       for (const _ of changedRows(db, t)) n++;
       log(`${t.name}: ${n} changed rows`);
     }
-    log(`titles: ${mirrorMaxId - snapMaxId} new, ${announce.length} to announce`);
+    log(`titles: ${mirrorMaxId - snapMaxId} new, ${announce.length} titles and ${announcePeople.length} people to announce`);
     return;
   }
 
@@ -246,7 +255,7 @@ async function pushPaused() {
   // New titles were never cached (only as 404s, which `created` clears); updated ones were.
   const updated = changedTitleIds.filter((id) => id <= snapMaxId);
   log(`revalidate: ${await notifySite({ titleIds: updated, created: mirrorMaxId > snapMaxId, catalog: true })}`);
-  log(`indexnow: ${await announceTitles(remote, announce)}`);
+  log(`indexnow: ${await announceTitles(remote, announce, announcePeople)}`);
 
   db.exec("DETACH snap");
   if (args.keep) {

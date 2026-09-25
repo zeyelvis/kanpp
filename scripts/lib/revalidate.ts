@@ -28,9 +28,9 @@ export async function notifySite(payload: { titleIds: number[]; created: boolean
   return results.join(",");
 }
 
-/** Submits the canonical detail URLs of the given titles to IndexNow. */
-export async function announceTitles(db: Db, titleIds: number[]): Promise<string> {
-  const paths: string[] = [];
+/** Submits the canonical URLs of the given titles (plus any other paths) to IndexNow. */
+export async function announceTitles(db: Db, titleIds: number[], extraPaths: string[] = []): Promise<string> {
+  const paths: string[] = [...extraPaths];
   // D1 allows at most 100 bound parameters per query.
   for (let i = 0; i < titleIds.length; i += 100) {
     const ids = titleIds.slice(i, i + 100);

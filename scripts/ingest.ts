@@ -20,6 +20,7 @@ import { refreshAiringSeries } from "@/lib/ingest/refresh";
 import { Resolver } from "@/lib/ingest/resolve";
 import { upsertSourceRows } from "@/lib/ingest/source-rows";
 import { fetchCmsPage } from "@/lib/sources/cms";
+import { personPath } from "@/lib/domain/slug";
 import { SOURCES, type CmsSource } from "@/lib/sources/registry";
 import { TmdbClient } from "@/lib/tmdb/client";
 import { loadEnv, openDb, parseDbTarget } from "./lib/open-db";
@@ -125,13 +126,13 @@ async function main() {
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
   const people = await refreshPeople(db);
-  log(`people: ${JSON.stringify(people)}`);
+  log(`people: ${JSON.stringify({ ...people, published: people.published.length })}`);
   // New person slugs may have been cached as 404s, like new titles.
   created ||= people.slugged > 0;
 
   if (target === "remote") {
     log(`revalidate: ${await notifySite({ titleIds: [...touched], created, catalog: true })}`);
-    log(`indexnow: ${await announceTitles(db, published.changed)}`);
+    log(`indexnow: ${await announceTitles(db, published.changed, people.published.map(personPath))}`);
   }
 }
 

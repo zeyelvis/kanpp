@@ -52,7 +52,7 @@ const CLEAR_GONE = `
  * and updates who is indexable. Returns how many slugs were created (their pages may have
  * been cached as 404s).
  */
-export async function refreshPeople(db: Db): Promise<{ changed: number; slugged: number; indexable: number }> {
+export async function refreshPeople(db: Db): Promise<{ changed: number; slugged: number; indexable: number; published: string[] }> {
   let changed = (await db.run(RECOMPUTE)).changes;
   changed += (await db.run(CLEAR_GONE)).changes;
 
@@ -72,17 +72,18 @@ export async function refreshPeople(db: Db): Promise<{ changed: number; slugged:
     }
   }
 
-  changed += (
-    await db.run(
-      `UPDATE people SET indexable = (slug IS NOT NULL AND title_count >= ?), updated_at = datetime('now')
-       WHERE indexable IS NOT (slug IS NOT NULL AND title_count >= ?)`,
-      [MIN_PERSON_TITLES, MIN_PERSON_TITLES],
-    )
-  ).changes;
+  const flipped = await db.all<{ slug: string | null; indexable: number }>(
+    `UPDATE people SET indexable = (slug IS NOT NULL AND title_count >= ?), updated_at = datetime('now')
+     WHERE indexable IS NOT (slug IS NOT NULL AND title_count >= ?) RETURNING slug, indexable`,
+    [MIN_PERSON_TITLES, MIN_PERSON_TITLES],
+  );
+  changed += flipped.length;
+  // Pages that just became indexable: worth announcing to search engines.
+  const published = flipped.filter((r) => r.indexable === 1 && r.slug).map((r) => r.slug!);
   const indexable = (await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM people WHERE indexable = 1"))?.n ?? 0;
   await db.run(
     "INSERT INTO sync_state (key, value) VALUES ('count:people', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
     [String(indexable)],
   );
-  return { changed, slugged, indexable };
+  return { changed, slugged, indexable, published };
 }
