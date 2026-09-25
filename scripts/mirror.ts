@@ -255,7 +255,8 @@ async function pushPaused() {
   // New titles were never cached (only as 404s, which `created` clears); updated ones were.
   const updated = changedTitleIds.filter((id) => id <= snapMaxId);
   log(`revalidate: ${await notifySite({ titleIds: updated, created: mirrorMaxId > snapMaxId, catalog: true })}`);
-  log(`indexnow: ${await announceTitles(remote, announce, announcePeople)}`);
+  // Announcing is best effort: the data is already live, the lock must still be released.
+  log(`indexnow: ${await announceTitles(remote, announce, announcePeople).catch((err: unknown) => `failed (${err instanceof Error ? err.message : err})`)}`);
 
   db.exec("DETACH snap");
   if (args.keep) {
