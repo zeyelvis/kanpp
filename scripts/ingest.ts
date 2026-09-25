@@ -5,9 +5,12 @@
  *   npm run ingest -- --db=remote --backfill=5              next 5 pages of each source's full catalog
  *   npm run ingest -- --db=remote --refresh-series=300      re-pull TMDB for airing series
  *   npm run ingest -- --db=local --sources=modu --pages=2   first N pages of one source
+ *   npm run ingest -- --db=file:data/mirror/kanpp.sqlite --sources=modu --from=500 --pages=1000 --fetch-only
  *   npm run ingest -- --db=remote --resolve-only --limit=2000
  *
- * Modes combine; every run ends with the publish gate for the titles it touched.
+ *   npm run ingest -- --db=file:data/mirror/kanpp.sqlite --resolve-only --limit=0 --republish
+ *
+ * Modes combine; every run ends with the publish gate for the titles it touched (--republish: all).
  */
 import { parseArgs } from "node:util";
 import type { Db } from "@/lib/db/types";
@@ -18,7 +21,7 @@ import { upsertSourceRows } from "@/lib/ingest/source-rows";
 import { fetchCmsPage } from "@/lib/sources/cms";
 import { SOURCES, type CmsSource } from "@/lib/sources/registry";
 import { TmdbClient } from "@/lib/tmdb/client";
-import { loadEnv, openDb } from "./lib/open-db";
+import { loadEnv, openDb, parseDbTarget } from "./lib/open-db";
 import { notifySite } from "./lib/revalidate";
 
 loadEnv();
@@ -29,12 +32,14 @@ const { values: args } = parseArgs({
     sources: { type: "string" },
     hours: { type: "string" },
     pages: { type: "string" },
+    from: { type: "string" },
     backfill: { type: "string" },
     "refresh-series": { type: "string" },
     limit: { type: "string", default: "1000" },
     concurrency: { type: "string", default: "4" },
     "resolve-only": { type: "boolean", default: false },
     "fetch-only": { type: "boolean", default: false },
+    republish: { type: "boolean", default: false },
   },
 });
 
@@ -57,7 +62,7 @@ async function fetchPages(db: Db, source: CmsSource, from: number, count: number
 }
 
 async function main() {
-  const target = args.db === "remote" ? "remote" : "local";
+  const target = parseDbTarget(args.db);
   const db = openDb(target);
   const tmdb = new TmdbClient(process.env.TMDB_API_KEY ?? "");
   const touched = new Set<number>();
@@ -70,7 +75,7 @@ async function main() {
       try {
         if (args.hours || args.pages) {
           const hours = args.hours ? Number(args.hours) : undefined;
-          const r = await fetchPages(db, source, 1, args.pages ? Number(args.pages) : Infinity, hours, touched);
+          const r = await fetchPages(db, source, Number(args.from ?? 1), args.pages ? Number(args.pages) : Infinity, hours, touched);
           log(`fetch ${source.id}: wrote ${r.written}, skipped ${JSON.stringify(r.skipped)}`);
         }
         if (args.backfill) {
@@ -110,6 +115,10 @@ async function main() {
     log(`refresh-series: ${r.refreshed} airing series re-synced from TMDB`);
   }
 
+  if (args.republish) {
+    // Re-run the publish gate for the whole catalog (cheap on a local file, slow over HTTP).
+    (await db.all<{ id: number }>("SELECT id FROM titles")).forEach((r) => touched.add(r.id));
+  }
   const published = await refreshTitles(db, touched);
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);

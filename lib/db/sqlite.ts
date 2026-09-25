@@ -8,6 +8,11 @@ import type { Db, RunResult, SqlValue, Statement } from "./types";
 export function sqliteDb(path: string): Db & { close(): void; exec(sql: string): void } {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA foreign_keys = ON");
+  if (path !== ":memory:") {
+    // Several ingest processes may write the same file (parallel source fetches).
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA busy_timeout = 30000");
+  }
   const toRun = (r: { changes: number | bigint; lastInsertRowid: number | bigint }): RunResult => ({
     changes: Number(r.changes),
     lastRowId: r.lastInsertRowid == null ? null : Number(r.lastInsertRowid),

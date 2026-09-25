@@ -34,37 +34,49 @@ interface TitleRow {
  * A title is indexable only when it is active, has a clean Chinese name, a poster, a real
  * synopsis and at least one playable HLS line. Everything else stays out of search engines.
  */
-export async function refreshTitles(db: Db, titleIds: Iterable<number>): Promise<{ refreshed: number; indexable: number }> {
+export async function refreshTitles(db: Db, titleIds: Iterable<number>, concurrency = 8): Promise<{ refreshed: number; indexable: number }> {
   let refreshed = 0;
   let indexable = 0;
-  for (const id of titleIds) {
-    const t = await db.first<TitleRow>("SELECT id, name, status, poster_path, overview FROM titles WHERE id = ?", [id]);
-    if (!t) continue;
-    const latest = await db.first<{ remarks: string | null; vod_time: string | null }>(
-      `SELECT remarks, vod_time FROM source_items WHERE title_id = ? AND match_status = 'matched'
-       ORDER BY vod_time DESC LIMIT 1`,
-      [id],
-    );
-    const active = SOURCES.map((s) => s.id);
-    const playable = await db.first<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM source_items WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
-       AND source_id IN (${active.map(() => "?").join(",")})`,
-      [id, ...active],
-    );
-    const ok =
-      t.status === "active" &&
-      isPublishableName(t.name) &&
-      Boolean(t.poster_path) &&
-      (t.overview?.trim().length ?? 0) >= MIN_OVERVIEW_LENGTH &&
-      (playable?.n ?? 0) > 0;
-    await db.run(
-      `UPDATE titles SET latest_label = ?, source_updated_at = ?, indexable = ?,
-         published_at = CASE WHEN ? = 1 THEN COALESCE(published_at, datetime('now')) ELSE published_at END
-       WHERE id = ?`,
-      [latest?.remarks ?? null, latest?.vod_time ?? null, ok ? 1 : 0, ok ? 1 : 0, id],
-    );
-    refreshed++;
-    if (ok) indexable++;
-  }
+  const queue = [...titleIds];
+  // Four queries per title: over D1's HTTP API they are round trips, so run a few titles at once.
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const ok = await refreshTitle(db, id);
+      if (ok === null) continue;
+      refreshed++;
+      if (ok) indexable++;
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
   return { refreshed, indexable };
+}
+
+/** Returns whether the title is now indexable, or null when it does not exist. */
+async function refreshTitle(db: Db, id: number): Promise<boolean | null> {
+  const t = await db.first<TitleRow>("SELECT id, name, status, poster_path, overview FROM titles WHERE id = ?", [id]);
+  if (!t) return null;
+  const latest = await db.first<{ remarks: string | null; vod_time: string | null }>(
+    `SELECT remarks, vod_time FROM source_items WHERE title_id = ? AND match_status = 'matched'
+     ORDER BY vod_time DESC LIMIT 1`,
+    [id],
+  );
+  const active = SOURCES.map((s) => s.id);
+  const playable = await db.first<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM source_items WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
+     AND source_id IN (${active.map(() => "?").join(",")})`,
+    [id, ...active],
+  );
+  const ok =
+    t.status === "active" &&
+    isPublishableName(t.name) &&
+    Boolean(t.poster_path) &&
+    (t.overview?.trim().length ?? 0) >= MIN_OVERVIEW_LENGTH &&
+    (playable?.n ?? 0) > 0;
+  await db.run(
+    `UPDATE titles SET latest_label = ?, source_updated_at = ?, indexable = ?,
+       published_at = CASE WHEN ? = 1 THEN COALESCE(published_at, datetime('now')) ELSE published_at END
+     WHERE id = ?`,
+    [latest?.remarks ?? null, latest?.vod_time ?? null, ok ? 1 : 0, ok ? 1 : 0, id],
+  );
+  return ok;
 }

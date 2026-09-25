@@ -31,8 +31,18 @@ function wranglerOAuthToken(): string | null {
   return readFileSync(file, "utf8").match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1] ?? null;
 }
 
-export function openDb(target: "local" | "remote"): Db {
+/** "local" = wrangler dev database, "remote" = production D1, "file:<path>" = a SQLite file (mirror). */
+export type DbTarget = "local" | "remote" | `file:${string}`;
+
+export function parseDbTarget(raw: string | undefined): DbTarget {
+  if (raw === "remote") return "remote";
+  if (raw?.startsWith("file:")) return raw as DbTarget;
+  return "local";
+}
+
+export function openDb(target: DbTarget): Db {
   if (target === "local") return sqliteDb(localD1Path());
+  if (target.startsWith("file:")) return sqliteDb(resolve(ROOT, target.slice(5)));
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const databaseId = process.env.D1_DATABASE_ID;
   if (!accountId || !databaseId) throw new Error("remote D1 needs CLOUDFLARE_ACCOUNT_ID and D1_DATABASE_ID");
