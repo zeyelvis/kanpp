@@ -90,9 +90,19 @@ function EpisodeGrid({ episodes, current, onPick }: { episodes: { name: string }
   );
 }
 
+/** Tells the site whether a line reached its first frame (ranks lines per country). */
+function sendPlaybackBeacon(line: string, ok: boolean, ms: number) {
+  try {
+    navigator.sendBeacon?.("/api/beacon", JSON.stringify({ line, ok, ms: Math.round(ms) }));
+  } catch {
+    // Reporting must never affect playback.
+  }
+}
+
 export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const reportRef = useRef<((ok: boolean) => void) | null>(null);
   const resumeAt = useRef<number | null>(null);
 
   // Server render has no fragment: it shows the default season, episode 1, first line.
@@ -193,6 +203,19 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     };
     video.addEventListener("loadedmetadata", onReady, { once: true });
 
+    // One report per load: first frame decoded (independent of autoplay) or a fatal error.
+    const sourceId = line?.sourceId;
+    const startedAt = performance.now();
+    let reported = false;
+    const report = (ok: boolean) => {
+      if (reported || !sourceId) return;
+      reported = true;
+      sendPlaybackBeacon(sourceId, ok, ok ? performance.now() - startedAt : 0);
+    };
+    reportRef.current = report;
+    const onFirstFrame = () => report(true);
+    video.addEventListener("loadeddata", onFirstFrame, { once: true });
+
     (async () => {
       const { default: HlsCtor } = await import("hls.js");
       if (cancelled) return;
@@ -209,6 +232,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             hls.recoverMediaError();
             return;
           }
+          report(false);
           failover(data.details);
         });
         hls.loadSource(episode.url);
@@ -223,10 +247,12 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     return () => {
       cancelled = true;
       video.removeEventListener("loadedmetadata", onReady);
+      video.removeEventListener("loadeddata", onFirstFrame);
+      reportRef.current = null;
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-    // failover/season/epIndex are read at load time only; the player is rebuilt per URL.
+    // failover/season/epIndex/line are read at load time only; the player is rebuilt per URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode?.url]);
 
@@ -235,7 +261,9 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     const video = videoRef.current;
     if (!video) return;
     const onError = () => {
-      if (!hlsRef.current) failover("media-error");
+      if (hlsRef.current) return;
+      reportRef.current?.(false);
+      failover("media-error");
     };
     video.addEventListener("error", onError);
     return () => video.removeEventListener("error", onError);

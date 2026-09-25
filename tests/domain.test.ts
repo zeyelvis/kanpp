@@ -5,6 +5,7 @@ import { hasAdultSignal, isPublishableName } from "@/lib/domain/safety";
 import { extractSeason, parseChineseNumber } from "@/lib/domain/season";
 import { baseSlug, decodeSlugParam, isOverEncoded, parseWatchState, titlePath, watchPath } from "@/lib/domain/slug";
 import { isNextEpisodeAhead, latestEpisodeNumber } from "@/lib/domain/labels";
+import { rankLines } from "@/lib/domain/line-rank";
 import { classifyCategory } from "@/lib/sources/categories";
 import { parsePlayGroups, pickHlsEpisodes, pickHlsGroup, serializeGroup } from "@/lib/sources/playurl";
 
@@ -215,5 +216,41 @@ describe("watch URLs", () => {
     expect(parseWatchState("#s=2&ep=10&line=modu")).toEqual({ season: 2, ep: 10, line: "modu" });
     expect(parseWatchState("?ep=3")).toEqual({ season: null, ep: 3, line: null });
     expect(parseWatchState("#s=0&ep=abc&line=<x>")).toEqual({ season: null, ep: null, line: null });
+  });
+});
+
+describe("rankLines", () => {
+  const lines = [
+    { sourceId: "modu", adIntro: false },
+    { sourceId: "ikun", adIntro: false },
+    { sourceId: "wujin", adIntro: true },
+  ];
+  const ids = (xs: { sourceId: string }[]) => xs.map((x) => x.sourceId);
+
+  it("keeps registry order without data", () => {
+    expect(ids(rankLines(lines, {}, {}))).toEqual(["modu", "ikun", "wujin"]);
+  });
+
+  it("puts the line that plays in this country first, and a failing one last", () => {
+    const local = { modu: { ok: 5, fail: 45 }, ikun: { ok: 48, fail: 2 } };
+    expect(ids(rankLines(lines, local, {}))).toEqual(["ikun", "wujin", "modu"]);
+  });
+
+  it("does not reorder on a handful of loads or on noise", () => {
+    expect(ids(rankLines(lines, { modu: { ok: 0, fail: 2 } }, {}))).toEqual(["modu", "ikun", "wujin"]);
+    const close = { modu: { ok: 900, fail: 100 }, ikun: { ok: 905, fail: 95 } };
+    expect(ids(rankLines(lines, close, {}))).toEqual(["modu", "ikun", "wujin"]);
+  });
+
+  it("falls back to all countries when the viewer's country has no data", () => {
+    const global = { modu: { ok: 10, fail: 190 }, ikun: { ok: 190, fail: 10 } };
+    expect(ids(rankLines(lines, {}, global))).toEqual(["ikun", "wujin", "modu"]);
+  });
+
+  it("lets a line with sponsor overlays lead only when the clean ones fail", () => {
+    const fine = { modu: { ok: 80, fail: 20 }, wujin: { ok: 99, fail: 1 } };
+    expect(ids(rankLines(lines, fine, {}))[0]).toBe("modu");
+    const broken = { modu: { ok: 10, fail: 90 }, ikun: { ok: 10, fail: 90 }, wujin: { ok: 99, fail: 1 } };
+    expect(ids(rankLines(lines, broken, {}))[0]).toBe("wujin");
   });
 });

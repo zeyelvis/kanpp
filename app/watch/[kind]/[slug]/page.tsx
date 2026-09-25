@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { Player } from "@/components/player/Player";
+import { playbackStats, viewerCountry } from "@/lib/data/playback";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons } from "@/lib/data/titles";
+import { rankLines } from "@/lib/domain/line-rank";
 import { parseWatchState, titlePath, watchFragment } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
@@ -29,7 +32,10 @@ export default async function WatchPage({ params, searchParams }: PageProps<"/wa
   const t = await resolveTitleRoute(await params, (canonical) => `/watch${canonical}${fragment}`);
   if ([...query.keys()].length > 0) permanentRedirect(`/watch${titlePath(t.kind, t.slug)}${fragment}`);
 
-  const [lines, seasons] = await Promise.all([getLines(t.id, t.tmdb_type), getSeasons(t.id)]);
+  const country = viewerCountry((await headers()).get("cf-ipcountry"));
+  const [registryLines, seasons, stats] = await Promise.all([getLines(t.id, t.tmdb_type), getSeasons(t.id), playbackStats(country)]);
+  // The line that plays best for viewers in this country goes first (it is the default).
+  const lines = rankLines(registryLines, stats.local, stats.global);
   const seasonNumbers = [...new Set(lines.map((l) => l.season).filter((s): s is number => s != null))].sort((a, b) => a - b);
 
   return (
