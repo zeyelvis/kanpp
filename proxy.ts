@@ -12,8 +12,8 @@ const TITLE_SEGMENTS = new Set(Object.values(KIND_SEGMENT));
  *   already on the old URL is carried over by the browser.
  * - Over-encoded title URLs (e.g. "%25E5%2585...") go to their clean form; the cache would
  *   otherwise serve the canonical page with a 200 under the duplicate URL.
- * - Title pages as Markdown for AI agents: "{title URL}.md", or the title URL itself with
- *   Accept: text/markdown, is rewritten to app/api/md.
+ * - Title and person pages as Markdown for AI agents: "{page URL}.md", or the page URL
+ *   itself with Accept: text/markdown, is rewritten to app/api/md or app/api/md-person.
  */
 export function proxy(request: NextRequest) {
   const segments = request.nextUrl.pathname.split("/");
@@ -36,6 +36,17 @@ export function proxy(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = `/api/md/${segments[1]}/${suffix ? segments[2].slice(0, -3) : segments[2]}`;
       url.search = suffix ? "?via=md" : "";
+      return NextResponse.rewrite(url);
+    }
+  }
+
+  // ["", "person", slug]: a person page.
+  if (segments.length === 3 && segments[1] === "person" && segments[2]) {
+    const suffix = segments[2].endsWith(".md");
+    if (suffix || prefersMarkdown(request.headers.get("accept"))) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/api/md-person/${suffix ? segments[2].slice(0, -3) : segments[2]}`;
+      url.search = "";
       return NextResponse.rewrite(url);
     }
   }

@@ -427,3 +427,48 @@ describe("API abuse guards", () => {
     expect(sentFromOwnPage(req({}))).toBe(false);
   });
 });
+
+describe("person page text", () => {
+  const credit = (id: number, name: string, year: number | null, extra: Record<string, unknown> = {}) => ({
+    id, kind: "tv" as const, name, year, poster_path: null, latest_label: null, vote_average: null, slug: name,
+    roles: ["演员"], character: null, vote_count: null, popularity: null, ...extra,
+  });
+  const person = { id: 1, name: "某演员", profile_path: null, title_count: 4, slug: "某演员", indexable: 1, updated_at: "" };
+  const credits = [
+    credit(4, "新剧", 2026, { vote_count: 3, popularity: 50 }),
+    credit(3, "名作", 2020, { vote_count: 900, vote_average: 8.7, character: "李四" }),
+    credit(2, "电影甲", 2020, { kind: "movie", vote_count: 120, vote_average: 7.1, roles: ["导演", "演员"] }),
+    credit(1, "旧片", null, { character: "Mike" }),
+  ];
+
+  it("picks known-for titles by how widely they were rated", async () => {
+    const { knownFor } = await import("@/lib/seo/person");
+    expect(knownFor(credits, 2, { 3: 0, 4: 0 }).map((c) => c.name)).toEqual(["名作", "电影甲"]);
+  });
+
+  it("prefers lead roles over bit parts in bigger titles", async () => {
+    const { knownFor } = await import("@/lib/seo/person");
+    const lead = { ...credits[0], vote_count: 200 };
+    // Billed 10th in the widely rated one, top billed in the other.
+    expect(knownFor([credits[1], lead], 1, { 3: 9, 4: 0 }).map((c) => c.name)).toEqual(["新剧"]);
+    expect(knownFor([credits[1], lead], 1, { 3: 0, 4: 0 }).map((c) => c.name)).toEqual(["名作"]);
+  });
+
+  it("groups the timeline by year with unknown years last, and notes roles", async () => {
+    const { creditsByYear, creditNote } = await import("@/lib/seo/person");
+    expect(creditsByYear(credits).map((g) => [g.year, g.credits.length])).toEqual([[2026, 1], [2020, 2], [null, 1]]);
+    expect(creditNote(credits[1])).toBe("饰 李四");
+    expect(creditNote(credits[2])).toBe("导演");
+    expect(creditNote(credits[3])).toBeNull();
+    expect(creditNote({ ...credits[1], character: "真武大帝(voice)" })).toBe("配音 真武大帝");
+    expect(creditNote({ ...credits[1], character: "小白（配音）" })).toBe("配音 小白");
+  });
+
+  it("states only facts from the credits", async () => {
+    const { personFacts } = await import("@/lib/seo/person");
+    const text = personFacts(person, credits, [{ id: 9, name: "搭档", slug: "搭档", profile_path: null, shared: 3, role: "演员" }], { 3: 0, 4: 0 });
+    expect(text).toBe(
+      "某演员，演员、导演。看片片收录了某演员参演的4部作品（2020–2026年）：电视剧3部、电影1部。代表作有《名作》《电影甲》《新剧》。评分最高的是《名作》（TMDB 8.7 分）。最近的作品是《新剧》（2026年）。合作最多的是搭档（3部）。",
+    );
+  });
+});

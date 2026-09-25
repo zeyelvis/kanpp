@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JsonLd } from "@/components/JsonLd";
 import { PosterCard } from "@/components/PosterCard";
+import { ScrollRail } from "@/components/ScrollRail";
 import { absoluteUrl, site } from "@/lib/config/site";
-import { getPersonBySlug, personCredits, type PersonCredit, type PersonDetail } from "@/lib/data/people";
-import { KIND_LABEL, KINDS } from "@/lib/domain/kinds";
-import { decodeSlugParam, personPath } from "@/lib/domain/slug";
+import { loadPersonPage } from "@/lib/data/people";
+import { KIND_LABEL } from "@/lib/domain/kinds";
+import { decodeSlugParam, personPath, titlePath } from "@/lib/domain/slug";
 import { tmdbImage, tmdbImageUrl } from "@/lib/images";
+import { creditNote, creditsByYear, describePerson, knownFor, personFacts, personTitle, roleSummary } from "@/lib/seo/person";
 
 // Rendered on first request, then served from the edge cache; each ingest marks it stale.
 export const revalidate = 86400;
@@ -15,60 +18,17 @@ export async function generateStaticParams() {
   return [];
 }
 
-const HAN = /\p{Script=Han}/u;
-
-/** "演员", "导演 · 演员": the person's roles, most frequent first. */
-function roleSummary(credits: PersonCredit[]): string[] {
-  const counts = new Map<string, number>();
-  for (const c of credits) for (const r of c.roles) counts.set(r, (counts.get(r) ?? 0) + 1);
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([r]) => r);
-}
-
-async function load(slugParam: string): Promise<{ person: PersonDetail; credits: PersonCredit[] }> {
-  const person = await getPersonBySlug(decodeSlugParam(slugParam));
-  if (!person) notFound();
-  const credits = await personCredits(person.id);
-  // No indexable titles left: nothing to show (the slug stays reserved).
-  if (credits.length === 0) notFound();
-  return { person, credits };
-}
-
-function verbOf(credits: PersonCredit[]): string {
-  const role = roleSummary(credits)[0];
-  return role === "演员" ? "参演" : role === "导演" ? "执导" : "参与";
-}
-
-/** "电影和电视剧": the two kinds the person has most titles in. */
-function kindsOf(credits: PersonCredit[]): string {
-  const counts = KINDS.map((k) => [k, credits.filter((c) => c.kind === k).length] as const).filter(([, n]) => n > 0);
-  return counts
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
-    .map(([k]) => KIND_LABEL[k])
-    .join("和");
-}
-
-function describe(person: PersonDetail, credits: PersonCredit[]): string {
-  const verb = verbOf(credits);
-  const top = [...credits]
-    .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))
-    .slice(0, 3)
-    .map((c) => `《${c.name}》`)
-    .join("");
-  return `${person.name}${verb}的${credits.length}部${kindsOf(credits)}，包括${top}等。在${site.name}查看每部作品的简介、分集更新并在线观看。`;
-}
-
 export async function generateMetadata({ params }: PageProps<"/person/[slug]">): Promise<Metadata> {
   const { slug } = await params;
-  const person = await getPersonBySlug(decodeSlugParam(slug));
-  if (!person) return {};
-  const credits = await personCredits(person.id);
+  const data = await loadPersonPage(decodeSlugParam(slug));
+  if (!data) return {};
+  const { person, credits, billing } = data;
   const path = personPath(person.slug);
-  const title = `${person.name}${verbOf(credits)}的${kindsOf(credits)}（${credits.length}部）`;
+  const title = personTitle(person, credits);
   const image = tmdbImage(person.profile_path, "w185");
   return {
     title,
-    description: describe(person, credits),
+    description: describePerson(person, credits, billing),
     alternates: { canonical: path },
     robots: person.indexable ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: { type: "profile", url: path, title, ...(image ? { images: [{ url: image, alt: person.name }] } : {}) },
@@ -77,11 +37,15 @@ export async function generateMetadata({ params }: PageProps<"/person/[slug]">):
 
 export default async function PersonPage({ params }: PageProps<"/person/[slug]">) {
   const { slug } = await params;
-  const { person, credits } = await load(slug);
+  const data = await loadPersonPage(decodeSlugParam(slug));
+  if (!data) notFound();
+  const { person, credits, collaborators, billing } = data;
   const photo = tmdbImage(person.profile_path, "w185");
   const roles = roleSummary(credits);
   const path = personPath(person.slug);
   const years = credits.map((c) => c.year).filter((y): y is number => y != null);
+  const facts = personFacts(person, credits, collaborators, billing);
+  const known = knownFor(credits, 12, billing);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -91,6 +55,7 @@ export default async function PersonPage({ params }: PageProps<"/person/[slug]">
         "@id": `${absoluteUrl(path)}#person`,
         name: person.name,
         url: absoluteUrl(path),
+        description: facts,
         ...(person.profile_path ? { image: tmdbImageUrl(person.profile_path, "w185") } : {}),
         ...(roles.length ? { jobTitle: roles.join("、") } : {}),
       },
@@ -105,48 +70,106 @@ export default async function PersonPage({ params }: PageProps<"/person/[slug]">
   };
 
   return (
-    <article className="mx-auto max-w-7xl px-4 pt-4 sm:pt-6">
+    <article className="pb-4">
       <JsonLd data={jsonLd} />
-      <Breadcrumbs items={[{ name: "首页", href: "/" }, { name: person.name, href: path }]} />
+      <div className="mx-auto max-w-7xl px-4 pt-4 sm:pt-6">
+        <Breadcrumbs items={[{ name: "首页", href: "/" }, { name: person.name, href: path }]} />
 
-      <header className="mt-4 flex items-center gap-4 sm:gap-6">
-        <div className="size-20 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line sm:size-28">
-          {photo ? <img src={photo} alt={person.name} width={112} height={112} className="size-full object-cover" /> : null}
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold sm:text-3xl">{person.name}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {roles.join(" · ")}
-            <span className="mx-2 text-faint">|</span>
-            {credits.length}部作品
-            {years.length ? (
-              <span className="ml-2 text-faint">
-                {Math.min(...years)}–{Math.max(...years)}
-              </span>
-            ) : null}
-          </p>
-        </div>
-      </header>
+        <header className="mt-4 flex items-center gap-4 sm:gap-6">
+          <div className="size-20 shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line sm:size-28">
+            {photo ? <img src={photo} alt={person.name} width={112} height={112} className="size-full object-cover" /> : null}
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold sm:text-3xl">{person.name}</h1>
+            <p className="mt-1 text-sm text-muted">
+              {roles.join(" · ")}
+              <span className="mx-2 text-faint">|</span>
+              {credits.length}部作品
+              {years.length ? (
+                <span className="ml-2 text-faint">
+                  {Math.min(...years)}–{Math.max(...years)}
+                </span>
+              ) : null}
+            </p>
+          </div>
+        </header>
 
-      {KINDS.map((kind) => {
-        const list = credits.filter((c) => c.kind === kind);
-        if (list.length === 0) return null;
-        return (
-          <section key={kind} className="mt-8">
-            <h2 className="mb-3 text-lg font-semibold">
-              {KIND_LABEL[kind]}
-              <span className="ml-2 text-sm font-normal text-muted">{list.length}</span>
-            </h2>
-            <ul className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-              {list.map((c) => (
+        <section aria-labelledby="facts" className="mt-6 max-w-4xl">
+          <h2 id="facts" className="mb-2 text-lg font-semibold">
+            影人速览
+          </h2>
+          <p className="leading-7 text-ink/85">{facts}</p>
+        </section>
+      </div>
+
+      {known.length > 1 ? (
+        <ScrollRail id="known-for" title="代表作">
+          {known.map((c, i) => (
+            <li key={c.id} className="w-[30%] shrink-0 snap-start sm:w-40 lg:w-[calc((100%-5*0.75rem)/6)]">
+              <PosterCard title={c} eager={i < 6} note={creditNote(c)} />
+            </li>
+          ))}
+        </ScrollRail>
+      ) : null}
+
+      <section aria-labelledby="timeline" className="mx-auto max-w-7xl px-4 pt-8 sm:pt-10">
+        <h2 id="timeline" className="mb-4 text-lg font-semibold sm:text-xl">
+          作品年表
+          <span className="ml-2 text-sm font-normal text-muted">{credits.length}部</span>
+        </h2>
+        <div className="space-y-5">
+          {creditsByYear(credits).map((g) => (
+            <div key={g.year ?? "unknown"} className="grid gap-x-6 sm:grid-cols-[4rem_minmax(0,1fr)]">
+              <h3 className="mb-1.5 text-sm font-semibold tabular-nums text-muted sm:mb-0 sm:pt-0.5">{g.year ?? "年份未知"}</h3>
+              <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                {g.credits.map((c) => {
+                  const note = creditNote(c);
+                  return (
+                    <li key={c.id} className="min-w-0 truncate text-sm">
+                      <Link href={titlePath(c.kind, c.slug)} className="font-medium hover:text-accent">
+                        {c.name}
+                      </Link>
+                      <span className="text-muted">
+                        {" · "}
+                        {KIND_LABEL[c.kind]}
+                        {note ? ` · ${note}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {collaborators.length ? (
+        <section aria-labelledby="collaborators" className="mx-auto max-w-7xl px-4 pt-8 sm:pt-10">
+          <h2 id="collaborators" className="mb-3 text-lg font-semibold sm:text-xl">
+            常合作的影人
+          </h2>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {collaborators.map((c) => {
+              const avatar = tmdbImage(c.profile_path, "w185");
+              return (
                 <li key={c.id}>
-                  <PosterCard title={c} note={c.character && HAN.test(c.character) ? `饰 ${c.character}` : c.roles.filter((r) => r !== "演员").join(" · ") || null} />
+                  <Link href={personPath(c.slug)} className="flex items-center gap-3 rounded-xl bg-surface/60 p-2.5 ring-1 ring-line hover:ring-accent/60">
+                    <span className="size-11 shrink-0 overflow-hidden rounded-full bg-surface-2">
+                      {avatar ? <img src={avatar} alt="" loading="lazy" width={44} height={44} className="size-full object-cover" /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{c.name}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {c.role} · 合作 {c.shared} 部
+                      </span>
+                    </span>
+                  </Link>
                 </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
     </article>
   );
 }

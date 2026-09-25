@@ -18,6 +18,19 @@ export interface PersonCredit extends TitleCard {
   /** 演员, 导演, 编剧, 主创 (one title can carry several) */
   roles: string[];
   character: string | null;
+  vote_count: number | null;
+  popularity: number | null;
+}
+
+export interface Collaborator {
+  id: number;
+  name: string;
+  slug: string;
+  profile_path: string | null;
+  /** Titles made together (among this person's indexable titles). */
+  shared: number;
+  /** What the collaborator did on most of them: 演员, 导演, ... */
+  role: string;
 }
 
 // Tagged `slugs` too: a person page cached as a 404 must appear once their slug is created.
@@ -33,11 +46,11 @@ export const getPersonBySlug = cache((slug: string): Promise<PersonDetail | null
 /** The person's indexable titles, newest first, one entry per title. */
 export const personCredits = cache((personId: number): Promise<PersonCredit[]> =>
   cachedQuery(["person-credits", personId], [TAG.catalog], 86400, async () => {
-    const rows = await (await getDb()).all<TitleCard & { role: string; character: string | null; popularity: number | null }>(
+    const rows = await (await getDb()).all<TitleCard & { role: string; character: string | null; vote_count: number | null; popularity: number | null }>(
       // CROSS JOIN fixes the join order: the person's credit ids drive primary-key lookups
       // into titles. Left to the planner, SQLite scanned every indexable title and expanded
       // the credits JSON once per title (tens of millions of steps per page).
-      `SELECT ${CARD_COLUMNS}, t.popularity, json_extract(c.value, '$.r') AS role, json_extract(c.value, '$.c') AS character
+      `SELECT ${CARD_COLUMNS}, t.vote_count, t.popularity, json_extract(c.value, '$.r') AS role, json_extract(c.value, '$.c') AS character
        FROM people p CROSS JOIN json_each(p.credits) c CROSS JOIN titles t CROSS JOIN slugs s
        WHERE p.id = ? AND t.id = json_extract(c.value, '$.t') AND t.indexable = 1
          AND s.title_id = t.id AND s.is_canonical = 1
@@ -45,7 +58,7 @@ export const personCredits = cache((personId: number): Promise<PersonCredit[]> =
       [personId],
     );
     const byTitle = new Map<number, PersonCredit>();
-    for (const { role, character, popularity: _p, ...card } of rows) {
+    for (const { role, character, ...card } of rows) {
       const hit = byTitle.get(card.id);
       if (hit) {
         if (!hit.roles.includes(role)) hit.roles.push(role);
@@ -76,6 +89,70 @@ export async function castOtherWorks(personIds: number[], excludeTitleId: number
   return out;
 }
 
+export interface PersonNetwork {
+  collaborators: Collaborator[];
+  /** Title id -> the person's position in its billed cast (0 = top billed); absent when not in the cast. */
+  billing: Record<number, number>;
+}
+
+/**
+ * From the billed cast (up to 12) and the directors/creators/writers of the person's titles:
+ * the people who worked with this person most often (only people with a page, at least two
+ * shared titles, most shared first), and where the person is billed on each title.
+ */
+export function personNetwork(personId: number, titleIds: number[], limit = 12): Promise<PersonNetwork> {
+  return cachedQuery(["person-network", personId], [TAG.related], 86400, async () => {
+    const db = await getDb();
+    const rows: { id: number; cast_json: string; crew_json: string }[] = [];
+    for (let i = 0; i < titleIds.length; i += 90) {
+      const chunk = titleIds.slice(i, i + 90);
+      rows.push(...(await db.all<{ id: number; cast_json: string; crew_json: string }>(
+        `SELECT id, cast_json, crew_json FROM titles WHERE id IN (${chunk.map(() => "?").join(",")})`,
+        chunk,
+      )));
+    }
+    const billing: Record<number, number> = {};
+    const tally = new Map<number, { name: string; profile: string | null; titles: number; roles: Map<string, number> }>();
+    for (const row of rows) {
+      const seen = new Map<number, string>();
+      const cast = JSON.parse(row.cast_json || "[]") as { id: number | null; name: string; profile?: string | null }[];
+      const position = cast.findIndex((c) => c.id === personId);
+      if (position >= 0) billing[row.id] = position;
+      for (const c of cast) {
+        if (c.id != null && c.id !== personId && !seen.has(c.id)) seen.set(c.id, "演员");
+        if (c.id != null && !tally.has(c.id)) tally.set(c.id, { name: c.name, profile: c.profile ?? null, titles: 0, roles: new Map() });
+      }
+      for (const c of JSON.parse(row.crew_json || "[]") as { id: number | null; name: string; job: string }[]) {
+        if (c.id == null || c.id === personId) continue;
+        if (!seen.has(c.id) || c.job === "导演") seen.set(c.id, c.job);
+        if (!tally.has(c.id)) tally.set(c.id, { name: c.name, profile: null, titles: 0, roles: new Map() });
+      }
+      for (const [id, role] of seen) {
+        const t = tally.get(id)!;
+        t.titles++;
+        t.roles.set(role, (t.roles.get(role) ?? 0) + 1);
+      }
+    }
+    const top = [...tally.entries()]
+      .filter(([, t]) => t.titles >= 2)
+      .sort((a, b) => b[1].titles - a[1].titles || a[0] - b[0])
+      .slice(0, 60);
+    const slugs = await personSlugs(top.map(([id]) => id));
+    const collaborators = top
+      .filter(([id]) => slugs[id])
+      .slice(0, limit)
+      .map(([id, t]) => ({
+        id,
+        name: t.name,
+        slug: slugs[id],
+        profile_path: t.profile,
+        shared: t.titles,
+        role: [...t.roles.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      }));
+    return { collaborators, billing };
+  });
+}
+
 /** Slugs of the given people that have an indexable page (for linking cast lists). */
 export function personSlugs(ids: number[]): Promise<Record<number, string>> {
   const unique = [...new Set(ids)].sort((a, b) => a - b).slice(0, 90);
@@ -103,4 +180,16 @@ export function sitemapPeople(offset: number, limit: number): Promise<{ slug: st
 
 export function countPeople(): Promise<number> {
   return storedCount("people", "SELECT COUNT(*) AS n FROM people WHERE indexable = 1", []);
+}
+
+/**
+ * Everything a person page (and its Markdown version) shows; null when there is no page:
+ * unknown slug, or no indexable titles left (the slug stays reserved).
+ */
+export async function loadPersonPage(slug: string): Promise<({ person: PersonDetail; credits: PersonCredit[] } & PersonNetwork) | null> {
+  const person = await getPersonBySlug(slug);
+  if (!person) return null;
+  const credits = await personCredits(person.id);
+  if (credits.length === 0) return null;
+  return { person, credits, ...(await personNetwork(person.id, credits.map((c) => c.id))) };
 }
