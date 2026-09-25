@@ -484,3 +484,35 @@ describe("search terms", () => {
     expect(storedSearchTerm("长".repeat(40))).toHaveLength(30);
   });
 });
+
+describe("player skip marks and speed", () => {
+  it("validates marks against the episode", async () => {
+    const { introMark, outroMark } = await import("@/lib/domain/skip");
+    expect(introMark(92.4, 2700)).toBe(92);
+    expect(introMark(2, 2700)).toBeNull(); // too early to be an intro
+    expect(introMark(900, 2700)).toBeNull(); // past the 10-minute limit
+    expect(outroMark(2580, 2700)).toBe(120);
+    expect(outroMark(600, 2700)).toBeNull(); // first half: a mis-click
+    expect(outroMark(2580, Number.NaN)).toBeNull();
+  });
+
+  it("starts at the resume position, else after the intro", async () => {
+    const { startPosition } = await import("@/lib/domain/skip");
+    const marks = { intro: 90, outro: null };
+    expect(startPosition(marks, null, 2700)).toBe(90);
+    expect(startPosition(marks, 1200, 2700)).toBe(1200);
+    expect(startPosition(marks, 30, 2700)).toBe(90); // resume inside the intro: skip it
+    expect(startPosition({ intro: null, outro: null }, 30, 2700)).toBe(30);
+    expect(startPosition(marks, null, 100)).toBeNull(); // a short clip: leave it alone
+  });
+
+  it("detects the credits and steps the speed", async () => {
+    const { inOutro, stepRate } = await import("@/lib/domain/skip");
+    expect(inOutro({ intro: null, outro: 120 }, 2585, 2700)).toBe(true);
+    expect(inOutro({ intro: null, outro: 120 }, 2500, 2700)).toBe(false);
+    expect(inOutro({ intro: null, outro: null }, 2699, 2700)).toBe(false);
+    expect(stepRate(1, 1)).toBe(1.25);
+    expect(stepRate(2, 1)).toBe(2);
+    expect(stepRate(0.75, -1)).toBe(0.75);
+  });
+});

@@ -4,6 +4,8 @@ import type Hls from "hls.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FollowButton } from "@/components/library/FollowButton";
 import { formatClock, lastWatched, recordHistory, useHistory, type TitleRef } from "@/lib/client/library";
+import { loadRate, loadSkip, saveRate, saveSkip } from "@/lib/client/player-prefs";
+import { inOutro, introMark, NO_MARKS, outroMark, RATES, startPosition, stepRate, type SkipMarks } from "@/lib/domain/skip";
 import { parseWatchState, type WatchState } from "@/lib/domain/slug";
 import { useHash, writeHash } from "./hash";
 import { hlsConfig, isMobileClient } from "./hls-config";
@@ -112,6 +114,16 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   const [error, setError] = useState<string | null>(null);
   const [time, setTime] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
+  // Client-only component (rendered after the lines load), so storage can be read directly.
+  const [rate, setRate] = useState(loadRate);
+  const [marks, setMarks] = useState<SkipMarks>(() => loadSkip(title.id));
+  const [pip] = useState(() => typeof document !== "undefined" && document.pictureInPictureEnabled === true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const marksRef = useRef(marks);
+  const outroFired = useRef(false);
+  useEffect(() => {
+    marksRef.current = marks;
+  }, [marks]);
 
   const epCount = line?.episodes.length ?? 0;
   const epIndex = Math.min(ep, Math.max(0, epCount - 1));
@@ -172,15 +184,16 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     setLoading(true);
     setError(null);
 
+    outroFired.current = false;
     const onReady = () => {
-      let target = resumeAt.current;
-      if (target == null && !resumeDismissed) {
+      let resume = resumeAt.current;
+      if (resume == null && !resumeDismissed) {
         const h = lastWatched(title.id);
-        if (h && (h.season ?? null) === (season ?? null) && h.ep === epIndex) target = h.t;
+        if (h && (h.season ?? null) === (season ?? null) && h.ep === epIndex) resume = h.t;
       }
-      if (target && target > 5 && video.duration && target < video.duration - 10) {
-        video.currentTime = target; // resume position, applied once at load (not stall recovery)
-      }
+      // Resume position, else past the viewer's intro mark: applied once at load (not stall recovery).
+      const target = startPosition(marksRef.current, resume, video.duration);
+      if (target != null) video.currentTime = target;
       resumeAt.current = null;
       void video.play().catch(() => undefined); // autoplay may be blocked; controls remain
     };
@@ -252,6 +265,14 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     return () => video.removeEventListener("error", onError);
   }, [failover]);
 
+  // Playback speed: kept across episodes (defaultPlaybackRate survives a new source).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.defaultPlaybackRate = rate;
+    video.playbackRate = rate;
+  }, [rate, episode?.url]);
+
   // Save progress periodically and when leaving.
   useEffect(() => {
     const video = videoRef.current;
@@ -310,11 +331,52 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
         else void video.requestFullscreen?.();
       } else if (e.key === "n" && hasNext) {
         goEpisode(epIndex + 1);
+      } else if (e.key === ">" || e.key === "<") {
+        e.preventDefault();
+        const next = stepRate(video.playbackRate, e.key === ">" ? 1 : -1);
+        setRate(next);
+        saveRate(next);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [goEpisode, epIndex, hasNext]);
+
+  const changeRate = (next: number) => {
+    setRate(next);
+    saveRate(next);
+  };
+
+  const togglePip = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
+    } catch {
+      setNotice("当前浏览器暂时无法开启画中画");
+    }
+  };
+
+  const updateMarks = (next: SkipMarks, message: string) => {
+    setMarks(next);
+    saveSkip(title.id, next);
+    setNotice(message);
+  };
+
+  const markIntro = () => {
+    const video = videoRef.current;
+    const at = video ? introMark(video.currentTime, video.duration) : null;
+    if (at == null) return setNotice("片头要在开头 10 分钟以内：播到正片开始的地方再点");
+    updateMarks({ ...marks, intro: at }, `已记住：以后每集从 ${formatClock(at)} 开始播放`);
+  };
+
+  const markOutro = () => {
+    const video = videoRef.current;
+    const before = video ? outroMark(video.currentTime, video.duration) : null;
+    if (before == null) return setNotice("片尾要在后半段、结束前 15 分钟以内：播到片尾开始的地方再点");
+    updateMarks({ ...marks, outro: before }, `已记住：以后每集结束前 ${formatClock(before)} 自动准备下一集`);
+  };
 
   const resume = () => {
     if (!saved) return;
@@ -348,7 +410,16 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             onWaiting={() => setLoading(true)}
             onPlaying={() => setLoading(false)}
             onCanPlay={() => setLoading(false)}
-            onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+            onTimeUpdate={(e) => {
+              const v = e.currentTarget;
+              setTime(v.currentTime);
+              // Reached the viewer's outro mark: offer the next episode (once per episode).
+              if (!outroFired.current && hasNext && countdown == null && inOutro(marks, v.currentTime, v.duration)) {
+                outroFired.current = true;
+                saveProgress();
+                setCountdown(AUTONEXT_SECONDS);
+              }
+            }}
             onEnded={() => {
               saveProgress();
               if (hasNext) setCountdown(AUTONEXT_SECONDS);
@@ -408,6 +479,59 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             <FollowButton title={title} compact />
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="inline-flex items-center gap-1.5 text-muted">
+            倍速
+            <select
+              aria-label="倍速"
+              value={rate}
+              onChange={(e) => changeRate(Number(e.target.value))}
+              className="h-8 rounded-md bg-surface px-2 text-ink ring-1 ring-line"
+            >
+              {RATES.map((r) => (
+                <option key={r} value={r}>
+                  {r}x
+                </option>
+              ))}
+            </select>
+          </label>
+          {pip ? (
+            <button type="button" onClick={togglePip} className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60">
+              画中画
+            </button>
+          ) : null}
+          {epCount > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={markIntro}
+                title="播到正片开始的地方点一下，以后每集自动从这里播放"
+                className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
+              >
+                片头到这{marks.intro != null ? ` · ${formatClock(marks.intro)}` : ""}
+              </button>
+              <button
+                type="button"
+                onClick={markOutro}
+                title="播到片尾开始的地方点一下，以后每集到这里就准备播放下一集"
+                className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
+              >
+                片尾从这{marks.outro != null ? ` · 前${formatClock(marks.outro)}` : ""}
+              </button>
+              {marks.intro != null || marks.outro != null ? (
+                <button type="button" onClick={() => updateMarks(NO_MARKS, "已清除这部剧的片头片尾设置")} className="h-8 px-1 text-muted hover:text-ink">
+                  清除
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        {notice ? (
+          <p role="status" className="text-xs text-muted">
+            {notice}
+          </p>
+        ) : null}
 
         {offerResume && saved ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-4 py-2.5 text-sm">
@@ -479,7 +603,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             <EpisodeGrid key={`${season}-${line.sourceId}`} episodes={line.episodes} current={epIndex} onPick={goEpisode} />
           </div>
         ) : null}
-        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒 · F 全屏 · N 下一集</p>
+        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒 · &lt; &gt; 调倍速 · F 全屏 · N 下一集</p>
       </div>
     </div>
   );
