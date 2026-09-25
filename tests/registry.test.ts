@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { sqliteDb } from "@/lib/db/sqlite";
 import { ensureCanonicalSlug } from "@/lib/ingest/titles";
@@ -8,7 +8,13 @@ import { refreshTitles } from "@/lib/ingest/publish";
 import { Resolver } from "@/lib/ingest/resolve";
 import type { TmdbClient } from "@/lib/tmdb/client";
 
-const schema = ["0001_init.sql", "0003_people.sql"].map((f) => readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8")).join("\n");
+// Every migration, in order: the same schema production has.
+const dir = new URL("../migrations/", import.meta.url);
+const schema = readdirSync(dir)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => readFileSync(new URL(f, dir), "utf8"))
+  .join("\n");
 
 function freshDb() {
   const db = sqliteDb(":memory:");

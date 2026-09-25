@@ -1,5 +1,5 @@
 import type { Db, SqlValue, Statement } from "@/lib/db/types";
-import { cleanDoubanId, cleanYear, type CmsItem } from "@/lib/sources/cms";
+import { cleanContent, cleanDoubanId, cleanYear, type CmsItem } from "@/lib/sources/cms";
 import { classifyCategory } from "@/lib/sources/categories";
 import { pickHlsGroup, serializeGroup } from "@/lib/sources/playurl";
 
@@ -43,6 +43,8 @@ export function prepareSourceRow(sourceId: string, item: CmsItem): PreparedRow |
       play?.playFrom ?? null,
       play?.playUrl ?? null,
       group?.episodes.length ?? 0,
+      cleanContent(item.vod_content),
+      item.vod_class?.trim() || null,
     ],
   };
 }
@@ -50,8 +52,8 @@ export function prepareSourceRow(sourceId: string, item: CmsItem): PreparedRow |
 // A renamed row or a changed douban id may now be a different work, so it is re-resolved.
 const UPSERT_SQL = `
 INSERT INTO source_items (source_id, vod_id, vod_name, vod_sub, vod_year, type_name, area, lang, douban_id,
-  remarks, vod_time, pic, actor, director, play_from, play_url, episode_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  remarks, vod_time, pic, actor, director, play_from, play_url, episode_count, content, classes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (source_id, vod_id) DO UPDATE SET
   match_status = CASE WHEN excluded.vod_name <> source_items.vod_name
     OR IFNULL(excluded.douban_id, '') <> IFNULL(source_items.douban_id, '') THEN 'pending' ELSE source_items.match_status END,
@@ -63,7 +65,9 @@ ON CONFLICT (source_id, vod_id) DO UPDATE SET
   type_name = excluded.type_name, area = excluded.area, lang = excluded.lang, douban_id = excluded.douban_id,
   remarks = excluded.remarks, vod_time = excluded.vod_time, pic = excluded.pic, actor = excluded.actor,
   director = excluded.director, play_from = excluded.play_from, play_url = excluded.play_url,
-  episode_count = excluded.episode_count, last_seen_at = datetime('now')`;
+  episode_count = excluded.episode_count,
+  content = COALESCE(excluded.content, source_items.content), classes = COALESCE(excluded.classes, source_items.classes),
+  last_seen_at = datetime('now')`;
 
 export interface UpsertStats {
   written: number;

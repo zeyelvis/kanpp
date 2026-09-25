@@ -17,6 +17,23 @@ export interface CmsItem {
   vod_director?: string;
   vod_play_from?: string;
   vod_play_url?: string;
+  vod_content?: string;
+  /** Comma-separated genres, e.g. "动作,动画,奇幻" */
+  vod_class?: string;
+}
+
+const ENTITIES: Record<string, string> = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&ldquo;": "“", "&rdquo;": "”", "&hellip;": "…", "&mdash;": "—" };
+
+/** Source synopses are HTML fragments: plain text, whitespace collapsed, capped. */
+export function cleanContent(raw: string | null | undefined, max = 800): string | null {
+  if (!raw) return null;
+  const text = raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&[a-z#0-9]+;/gi, (e) => ENTITIES[e.toLowerCase()] ?? " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 export interface CmsPage {
@@ -56,6 +73,25 @@ export async function fetchCmsPage(source: CmsSource, page: number, hours?: numb
     }
   }
   throw new Error(`${source.id} page ${page}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+/** Full rows for specific vod ids (苹果CMS `ids=`), e.g. to fetch synopses for known rows. */
+export async function fetchCmsByIds(source: CmsSource, ids: string[]): Promise<CmsItem[]> {
+  if (ids.length === 0) return [];
+  const url = new URL(source.api);
+  url.searchParams.set("ac", "videolist");
+  url.searchParams.set("ids", ids.join(","));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { list?: CmsItem[] };
+      return Array.isArray(data.list) ? data.list : [];
+    } catch (err) {
+      if (attempt >= 3) throw new Error(`${source.id} ids ${ids.slice(0, 3).join(",")}...: ${err instanceof Error ? err.message : String(err)}`);
+      await new Promise((r) => setTimeout(r, 800 * 2 ** attempt));
+    }
+  }
 }
 
 export function cleanDoubanId(raw: string | number | null | undefined): string | null {

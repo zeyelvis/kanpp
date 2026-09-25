@@ -56,11 +56,11 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Names joined by " / ", linked to person pages where one exists. */
-function Names({ people, slugs }: { people: { id: number; name: string }[]; slugs: Record<number, string> }) {
+function Names({ people, slugs }: { people: { id: number | null; name: string }[]; slugs: Record<number, string> }) {
   return people.map((p, i) => (
-    <span key={p.id}>
+    <span key={p.id ?? p.name}>
       {i > 0 ? " / " : null}
-      {slugs[p.id] ? (
+      {p.id != null && slugs[p.id] ? (
         <Link href={personPath(slugs[p.id])} className="hover:text-accent">
           {p.name}
         </Link>
@@ -116,7 +116,7 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
     getSeasons(t.id),
     getLines(t.id, t.tmdb_type),
     relatedTitles(t, 18),
-    personSlugs([...t.cast, ...t.crew].map((p) => p.id)),
+    personSlugs([...t.cast, ...t.crew].map((p) => p.id).filter((id): id is number => id != null)),
   ]);
 
   const backdrop = tmdbImage(t.backdrop_path, "w1280");
@@ -211,7 +211,7 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
             ]}
           />
         </div>
-        <WatchStage title={titleRef} backdrop={backdrop} playable={lines.length > 0} header={header} panel={panel} />
+        <WatchStage title={titleRef} backdrop={backdrop} poster={poster} playable={lines.length > 0} header={header} panel={panel} />
       </div>
 
       <section className="mx-auto mt-10 grid max-w-7xl gap-6 px-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -261,7 +261,7 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
       {t.cast.length > 0 ? (
         <ScrollRail id="cast" title="演员">
           {t.cast.map((c) => (
-            <li key={c.id} className="w-20 shrink-0 snap-start text-center sm:w-24">
+            <li key={c.id ?? c.name} className="w-20 shrink-0 snap-start text-center sm:w-24">
               {(() => {
                 const body = (
                   <>
@@ -272,7 +272,7 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
                     {c.character ? <p className="truncate text-xs text-faint">{c.character}</p> : null}
                   </>
                 );
-                return slugs[c.id] ? (
+                return c.id != null && slugs[c.id] ? (
                   <Link href={personPath(slugs[c.id])} className="block hover:text-accent">
                     {body}
                   </Link>

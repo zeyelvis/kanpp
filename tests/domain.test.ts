@@ -288,3 +288,13 @@ describe("same-origin images", () => {
     expect(tmdbImage(null, "w342")).toBeNull();
   });
 });
+
+describe("source poster URLs", () => {
+  it("map to one-size same-origin paths", async () => {
+    const { tmdbImage } = await import("@/lib/images");
+    const { parseImagePath } = await import("@/lib/edge/image-proxy");
+    expect(tmdbImage("/src/0123456789abcdef0123.jpg", "w342")).toBe("/img/src/0123456789abcdef0123.jpg");
+    expect(parseImagePath("/img/src/0123456789abcdef0123.jpg")).toEqual({ size: "src", file: "0123456789abcdef0123.jpg" });
+    expect(parseImagePath("/img/src/not-a-key.jpg")).toBeNull();
+  });
+});

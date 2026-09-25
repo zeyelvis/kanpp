@@ -20,15 +20,16 @@ export interface TitleCard {
   slug: string;
 }
 
+// id is the TMDB person id; null for titles built from source metadata.
 export interface CastMember {
-  id: number;
+  id: number | null;
   name: string;
   character: string | null;
   profile: string | null;
 }
 
 export interface CrewMember {
-  id: number;
+  id: number | null;
   name: string;
   job: string;
 }

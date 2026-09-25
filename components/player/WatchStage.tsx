@@ -38,6 +38,8 @@ function Spinner() {
 interface Props {
   title: TitleRef & { latestLabel: string | null };
   backdrop: string | null;
+  /** Shown (letterboxed) when there is no 16:9 backdrop, e.g. titles built from source data. */
+  poster?: string | null;
   playable: boolean;
   /** Title, facts and actions: under the video (phones: between video and episodes). */
   header: ReactNode;
@@ -50,7 +52,7 @@ interface Props {
  * server-rendered episode list; pressing play, following an episode link (#s=&ep=) or arriving
  * with a fragment (continue-watching links, old /watch/ URLs) mounts the player in place.
  */
-export function WatchStage({ title, backdrop, playable, header, panel }: Props) {
+export function WatchStage({ title, backdrop, poster = null, playable, header, panel }: Props) {
   const hash = useHash();
   const [clicked, setClicked] = useState(false);
   const [fromHash, setFromHash] = useState(false);
@@ -101,7 +103,7 @@ export function WatchStage({ title, backdrop, playable, header, panel }: Props) 
   if (active && data) {
     return (
       <div ref={ref} className="scroll-mt-16">
-        <Player title={title} backdrop={backdrop} lines={data.lines} seasons={data.seasons} defaultSeason={data.defaultSeason} />
+        <Player title={title} backdrop={backdrop ?? poster} lines={data.lines} seasons={data.seasons} defaultSeason={data.defaultSeason} />
         <div className="mt-6">{header}</div>
       </div>
     );
@@ -111,7 +113,14 @@ export function WatchStage({ title, backdrop, playable, header, panel }: Props) 
     <div ref={ref} className="scroll-mt-16 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-x-6">
       <div className="order-1 -mx-4 sm:mx-0 lg:col-start-1 lg:row-start-1">
         <div className="relative aspect-video overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
-          {backdrop ? <img src={backdrop} alt={`${title.name}剧照`} fetchPriority="high" className="size-full object-cover opacity-80" /> : null}
+          {backdrop ? (
+            <img src={backdrop} alt={`${title.name}剧照`} fetchPriority="high" className="size-full object-cover opacity-80" />
+          ) : poster ? (
+            <>
+              <img src={poster} alt="" aria-hidden className="absolute inset-0 size-full scale-110 object-cover opacity-40 blur-2xl" />
+              <img src={poster} alt={`${title.name}海报`} fetchPriority="high" className="relative mx-auto h-full object-contain" />
+            </>
+          ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/25" />
           {playable ? (
             <button type="button" onClick={start} className="group absolute inset-0 flex flex-col items-center justify-center gap-3" aria-label={`播放《${title.name}》`}>

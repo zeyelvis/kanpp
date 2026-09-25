@@ -10,7 +10,10 @@ export { BucketCachePurge, DOQueueHandler, DOShardedTagCache } from "./.open-nex
 
 const worker = {
   async fetch(request, env, ctx) {
-    if (new URL(request.url).pathname.startsWith("/img/")) return serveImage(request, env.IMAGES, ctx);
+    if (new URL(request.url).pathname.startsWith("/img/")) {
+      const lookup = async (key) => (await env.DB.prepare("SELECT url FROM source_images WHERE key = ?").bind(key).first("url")) ?? null;
+      return serveImage(request, env.IMAGES, ctx, lookup);
+    }
     return handler.fetch(request, env, ctx);
   },
 };
