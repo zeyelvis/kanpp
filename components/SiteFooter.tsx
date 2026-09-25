@@ -27,6 +27,9 @@ export function SiteFooter() {
         <span>
           © {new Date().getFullYear()} {site.domain}
         </span>
+        <Link href="/topic" className="hover:text-ink">
+          全部专题
+        </Link>
         <Link href="/about" className="hover:text-ink">
           关于我们
         </Link>

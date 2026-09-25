@@ -8,6 +8,8 @@ import { JsonLd } from "@/components/JsonLd";
 import { FollowButton } from "@/components/library/FollowButton";
 import { PlayButton } from "@/components/library/PlayButton";
 import { WatchStage } from "@/components/player/WatchStage";
+import { TopicChips } from "@/components/TopicChips";
+import { topicsForTitle } from "@/lib/domain/topics";
 import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
 import { castOtherWorks, personSlugs } from "@/lib/data/people";
@@ -224,6 +226,9 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
               作品速览
             </h2>
             <p className="leading-7 text-ink/85">{titleFacts(t, lines)}</p>
+            <div className="mt-3">
+              <TopicChips title="相关专题" topics={topicsForTitle(t)} compact />
+            </div>
           </section>
           {t.tagline ? <p className="italic text-muted">“{t.tagline}”</p> : null}
           {t.overview ? (

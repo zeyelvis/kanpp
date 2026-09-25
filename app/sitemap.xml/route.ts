@@ -13,6 +13,7 @@ export async function GET() {
     absoluteUrl("/sitemaps/pages.xml"),
     // Recently updated titles first (also listed in titles-N): fresh episodes get re-crawled.
     absoluteUrl("/sitemaps/recent.xml"),
+    absoluteUrl("/sitemaps/topics.xml"),
     ...Array.from({ length: chunks }, (_, i) => absoluteUrl(`/sitemaps/titles-${i}.xml`)),
     ...Array.from({ length: personChunks }, (_, i) => absoluteUrl(`/sitemaps/people-${i}.xml`)),
   ];

@@ -327,3 +327,31 @@ describe("title fact summary", () => {
     expect(movie).toBe("《泰德拉索》是2020年电影。片长1小时35分钟。资料更新于2026年9月25日。");
   });
 });
+
+describe("topics", () => {
+  it("have unique names and follow the calendar for years", async () => {
+    const { allTopics, findTopic, topicPath } = await import("@/lib/domain/topics");
+    const names = allTopics(2026).map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(findTopic("2026年电影", 2026)).toMatchObject({ kind: "movie", year: 2026 });
+    expect(findTopic("2023年电影", 2026)).toBeUndefined();
+    expect(topicPath("韩剧")).toBe("/topic/%E9%9F%A9%E5%89%A7");
+  });
+
+  it("link a title to its most specific topics", async () => {
+    const { topicsForTitle } = await import("@/lib/domain/topics");
+    const names = topicsForTitle({ kind: "tv", countries: ["KR"], genres: ["剧情", "犯罪"], year: 2026 }, 2026).map((t) => t.name);
+    expect(names[0]).toBe("2026年韩剧");
+    expect(names).toEqual(expect.arrayContaining(["韩剧", "犯罪剧", "2026年电视剧"]));
+    expect(names).not.toContain("美剧");
+  });
+
+  it("write the intro from the catalog's numbers only", async () => {
+    const { topicIntro } = await import("@/lib/seo/topic");
+    const card = (name: string, vote_average: number | null = null) => ({ id: 1, kind: "tv", name, year: 2025, poster_path: null, latest_label: null, vote_average, slug: name });
+    const text = topicIntro({ name: "韩剧", kind: "tv", regions: ["KR"], group: "region" }, {
+      count: 1562, recentCount: 0, popular: [card("甲"), card("乙"), card("丙")], recent: [], topRated: [card("丁", 9.1)],
+    } as never);
+    expect(text).toBe("看片片收录了1,562部韩剧。最受欢迎的有《甲》《乙》《丙》。评分最高的是《丁》（9.1 分）。每部都能在线观看，可以按集选播，更新进度一目了然。");
+  });
+});

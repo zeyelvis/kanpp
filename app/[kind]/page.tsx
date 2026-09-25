@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { Pagination } from "@/components/Pagination";
+import { TopicChips } from "@/components/TopicChips";
+import { topicsForKind } from "@/lib/domain/topics";
 import { PosterGrid } from "@/components/PosterCard";
 import { site } from "@/lib/config/site";
 import { browseTitles, countByKind, PAGE_SIZE } from "@/lib/data/titles";
@@ -97,6 +99,12 @@ export default async function ChannelPage({ params, searchParams }: PageProps<"/
         {isDefaultBrowse(f) ? KIND_LABEL[kind] : filterSummary(kind, f)}
         {total != null ? <span className="ml-3 text-sm font-normal text-muted">共 {total} 部</span> : null}
       </h1>
+
+      {isDefaultBrowse(f) && (page ?? 1) === 1 ? (
+        <div className="mt-4">
+          <TopicChips title="热门专题" topics={topicsForKind(kind)} compact />
+        </div>
+      ) : null}
 
       <div className="mt-5 space-y-2 rounded-xl bg-surface/60 p-3 ring-1 ring-line sm:p-4">
         <ChipRow label="类型" active={f.genre} options={[{ value: null, label: "全部" }, ...GENRES[kind].map((g) => ({ value: g, label: g }))]} hrefFor={(v) => patch({ genre: v })} />

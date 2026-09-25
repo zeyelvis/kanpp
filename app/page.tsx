@@ -3,6 +3,8 @@ import Link from "next/link";
 import { HeroCarousel } from "@/components/HeroCarousel";
 import { ContinueRail } from "@/components/library/ContinueRail";
 import { PosterRail } from "@/components/PosterRail";
+import { TopicChips } from "@/components/TopicChips";
+import { featuredTopics } from "@/lib/domain/topics";
 import { ScrollRail } from "@/components/ScrollRail";
 import { site } from "@/lib/config/site";
 import { featuredTitles, latestByKind, topRated, upcomingEpisodes } from "@/lib/data/titles";
@@ -87,6 +89,13 @@ export default async function HomePage() {
       ))}
 
       <PosterRail id="rail-rated" title="高分佳作" titles={rated} />
+
+      <div className="mx-auto max-w-7xl px-4 pt-10">
+        <TopicChips title="热门专题" topics={featuredTopics()} />
+        <Link href="/topic" className="mt-3 inline-block text-sm text-muted hover:text-accent">
+          全部专题 ›
+        </Link>
+      </div>
     </>
   );
 }

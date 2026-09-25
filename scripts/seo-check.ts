@@ -75,7 +75,7 @@ async function checkIndexablePage(path: string, opts: { jsonLd: boolean }): Prom
       try {
         const data = JSON.parse(b[1]);
         const types = (data["@graph"] ?? [data]).map((n: { "@type": string }) => n["@type"]);
-        const expected = path.startsWith("/person/") ? ["Person"] : ["Movie", "TVSeries"];
+        const expected = path.startsWith("/person/") ? ["Person"] : path.startsWith("/topic/") ? ["CollectionPage"] : ["Movie", "TVSeries"];
         if (!types.some((t: string) => expected.includes(t))) fail(path, "json-ld", `no ${expected.join("/")} node (${types.join(",")})`);
       } catch (err) {
         fail(path, "json-ld", `invalid JSON: ${(err as Error).message}`);
@@ -145,7 +145,7 @@ async function main() {
   await Promise.all(Array.from({ length: 6 }, worker));
 
   // Non-canonical forms of a real title URL must 308 once to the canonical one.
-  const probe = sample.find((p) => !p.startsWith("/person/"));
+  const probe = sample.find((p) => !p.startsWith("/person/") && !p.startsWith("/topic/"));
   if (probe) {
     const [, segment, slug] = probe.split("/");
     const other = segment === "movie" ? "tv" : "movie";
