@@ -307,7 +307,7 @@ export async function searchTitles(query: string, limit = 48): Promise<TitleCard
   // Prefix range on the alias index: exact and "starts with" hits, both scripts.
   return cachedQuery(["search", key, q, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
-     WHERE t.indexable = 1 AND t.id IN (SELECT title_id FROM aliases WHERE norm >= ? AND norm < ?)
+     WHERE t.id IN (SELECT title_id FROM aliases WHERE norm >= ? AND norm < ?) AND +t.indexable = 1
      ORDER BY (t.name = ?) DESC, t.popularity DESC LIMIT ?`,
     [key, `${key}\u{10FFFF}`, q, limit],
   ));

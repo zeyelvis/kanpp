@@ -63,7 +63,9 @@ export function personSlugs(ids: number[]): Promise<Record<number, string>> {
   // Slow-moving: refreshed daily, so title pages do not go stale on every ingest run.
   return cachedQuery(["person-slugs", unique.join(",")], [TAG.related], 86400, async () => {
     const rows = await (await getDb()).all<{ id: number; slug: string }>(
-      `SELECT id, slug FROM people WHERE indexable = 1 AND id IN (${unique.map(() => "?").join(",")})`,
+      // "+indexable" keeps SQLite on the primary key: with a plain term it walked the
+      // indexable index (every person with a page) for each title page.
+      `SELECT id, slug FROM people WHERE id IN (${unique.map(() => "?").join(",")}) AND +indexable = 1`,
       unique,
     );
     return Object.fromEntries(rows.map((r) => [r.id, r.slug]));
