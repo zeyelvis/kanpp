@@ -10,11 +10,12 @@ import { PlayButton } from "@/components/library/PlayButton";
 import { WatchStage } from "@/components/player/WatchStage";
 import { TopicChips } from "@/components/TopicChips";
 import { topicsForTitle } from "@/lib/domain/topics";
+import { updateCadence, updateTimeline } from "@/lib/domain/updates";
 import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
 import { castOtherWorks, personSlugs } from "@/lib/data/people";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
-import { getLines, getSeasons, relatedTitles, type Line, type TitleDetail } from "@/lib/data/titles";
+import { getLines, getSeasons, getUpdates, relatedTitles, type Line, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { personPath, playFragment, seasonPath, titlePath } from "@/lib/domain/slug";
@@ -114,12 +115,16 @@ function LinesSummary({ lines }: { lines: Line[] }) {
 
 export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">) {
   const t = await resolveTitleRoute(await params);
-  const [seasons, lines, related, slugs] = await Promise.all([
+  const [seasons, lines, related, slugs, updates] = await Promise.all([
     getSeasons(t.id),
     getLines(t.id, t.tmdb_type),
     relatedTitles(t, 18),
     personSlugs([...t.cast, ...t.crew].map((p) => p.id).filter((id): id is number => id != null)),
+    getUpdates(t.id),
   ]);
+  // One entry is only the state when recording began; a history needs a change after it.
+  const timeline = updateTimeline(updates);
+  const cadence = updateCadence(timeline);
 
   // Other titles by up to three leads with person pages: links between titles and people.
   const leads = t.cast.filter((c) => c.id != null && slugs[c.id]).slice(0, 3);
@@ -237,6 +242,24 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
                 剧情简介
               </h2>
               <ExpandableText text={t.overview} />
+            </section>
+          ) : null}
+          {timeline.length >= 2 ? (
+            <section aria-labelledby="updates">
+              <h2 id="updates" className="mb-2 text-lg font-semibold">
+                更新记录
+              </h2>
+              {cadence ? <p className="mb-2 text-sm text-muted">{cadence}（北京时间）</p> : null}
+              <ol className="space-y-1.5 text-sm">
+                {timeline.map((e) => (
+                  <li key={`${e.date}-${e.text}`} className="flex gap-3">
+                    <time dateTime={e.date} className="w-16 shrink-0 tabular-nums text-muted">
+                      {shortDate(e.date)}
+                    </time>
+                    <span className="text-ink/85">{e.text}</span>
+                  </li>
+                ))}
+              </ol>
             </section>
           ) : null}
         </div>

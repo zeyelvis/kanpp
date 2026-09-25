@@ -6,6 +6,7 @@ import type { BrowseFilters } from "@/lib/domain/filters";
 import type { Kind } from "@/lib/domain/kinds";
 import { isNextEpisodeAhead } from "@/lib/domain/labels";
 import { normalizeKey } from "@/lib/domain/normalize";
+import type { UpdateRow } from "@/lib/domain/updates";
 import { pickHlsEpisodes, type Episode } from "@/lib/sources/playurl";
 import { getSource } from "@/lib/sources/registry";
 
@@ -266,6 +267,16 @@ export const getSeasons = cache((titleId: number): Promise<Season[]> =>
   cachedQuery(["seasons", titleId], [TAG.title(titleId)], 3600, async () =>
     (await getDb()).all<Season>(
       "SELECT season_number, name, overview, air_date, episode_count, poster_path FROM seasons WHERE title_id = ? ORDER BY season_number",
+      [titleId],
+    ),
+  ),
+);
+
+/** Recorded label changes (migrations/0007), newest first; see lib/domain/updates.ts. */
+export const getUpdates = cache((titleId: number): Promise<UpdateRow[]> =>
+  cachedQuery(["updates", titleId], [TAG.title(titleId)], 3600, async () =>
+    (await getDb()).all<UpdateRow>(
+      "SELECT label, source_time, seen_at FROM title_updates WHERE title_id = ? ORDER BY id DESC LIMIT 60",
       [titleId],
     ),
   ),

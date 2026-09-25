@@ -1,5 +1,8 @@
 import { absoluteUrl, site } from "@/lib/config/site";
 import { KIND_LABEL, KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
+import { topicPath } from "@/lib/domain/topics";
+
+const year = new Date().getFullYear();
 
 // https://llmstxt.org: a plain map of the site for AI search engines and agents.
 const body = `# ${site.name} (${site.domain})
@@ -12,6 +15,7 @@ ${site.name}是影视资料与第三方播放线路的索引。每部作品只�
 
 ${KINDS.map((k) => `- [${KIND_LABEL[k]}](${absoluteUrl(`/${KIND_SEGMENT[k]}`)}): 最新与热门${KIND_LABEL[k]}，可按类型、地区、年份和排序筛选`).join("\n")}
 - [放送表](${absoluteUrl("/schedule")}): 未来一周的剧集更新时间
+- [专题](${absoluteUrl("/topic")}): 按地区、类型、年份整理的片单与排行，例如 [韩剧](${absoluteUrl(topicPath("韩剧"))})、[${year}年电影](${absoluteUrl(topicPath(`${year}年电影`))})、[动作电影](${absoluteUrl(topicPath("动作电影"))})
 
 ## 网址规则
 
@@ -19,6 +23,13 @@ ${KINDS.map((k) => `- [${KIND_LABEL[k]}](${absoluteUrl(`/${KIND_SEGMENT[k]}`)}):
 - 分季页：\`/{频道}/{片名}-{年份}/s{季号}\`
 - 播放：就在作品页顶部，季、集和线路写在网址 \`#s=1&ep=3\` 片段里（同一个网址）
 - 全部作品列表：[sitemap.xml](${absoluteUrl("/sitemap.xml")})
+
+## Markdown 版
+
+作品页有 Markdown 版，内容与网页一致（基本资料、作品速览、简介、分季、更新记录、播放线路、相关专题、相似作品），适合智能体直接读取：
+
+- 在作品网址后加 \`.md\`，例如 \`/tv/某剧-2026.md\`
+- 或请求作品网址时带上 \`Accept: text/markdown\`
 
 ## 使用
 

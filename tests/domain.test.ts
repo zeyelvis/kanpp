@@ -355,3 +355,55 @@ describe("topics", () => {
     expect(text).toBe("看片片收录了1,562部韩剧。最受欢迎的有《甲》《乙》《丙》。评分最高的是《丁》（9.1 分）。每部都能在线观看，可以按集选播，更新进度一目了然。");
   });
 });
+
+describe("update timeline", () => {
+  const row = (label: string, source_time: string | null, seen_at = "2026-09-25 03:00:00") => ({ label, source_time, seen_at });
+
+  it("keeps only forward moves, newest first", async () => {
+    const { updateTimeline } = await import("@/lib/domain/updates");
+    const rows = [
+      row("全16集", "2026-10-20 20:00:00"),
+      row("第15集", "2026-10-14 20:00:00"),
+      row("更新至14集", "2026-10-13 20:00:00"),
+      row("第13集", "2026-10-13 19:00:00"), // flip back from another source
+      row("第14集", "2026-10-13 18:00:00"),
+      row("更新至第13集", "2026-10-07 20:00:00"),
+      row("第13集", "2026-10-07 19:00:00"), // same episode relabelled below
+      row("第12集", null, "2026-10-01 17:00:00"), // UTC 17:00 is 10-02 in Beijing
+    ];
+    expect(updateTimeline(rows)).toEqual([
+      { date: "2026-10-20", text: "全16集", episode: 16 },
+      { date: "2026-10-14", text: "更新到第15集", episode: 15 },
+      { date: "2026-10-13", text: "更新到第14集", episode: 14 },
+      { date: "2026-10-07", text: "更新到第13集", episode: 13 },
+      { date: "2026-10-02", text: "更新到第12集", episode: 12 },
+    ]);
+  });
+
+  it("tracks films by label and stops after a finish", async () => {
+    const { updateTimeline } = await import("@/lib/domain/updates");
+    expect(updateTimeline([row("TC", "2026-09-20"), row("HD", "2026-09-10"), row("TC", "2026-09-01")]).map((e) => e.text)).toEqual(["更新为「HD」", "更新为「TC」"]);
+    expect(updateTimeline([row("第3集", "2026-09-20"), row("完结", "2026-09-10")]).map((e) => e.text)).toEqual(["完结"]);
+  });
+
+  it("names the usual weekdays only when the pattern is clear", async () => {
+    const { updateCadence } = await import("@/lib/domain/updates");
+    const e = (date: string, episode: number) => ({ date, text: "", episode });
+    // 2026-10-06 and 10-13 are Tuesdays, 10-07 and 10-14 Wednesdays.
+    expect(updateCadence([e("2026-10-14", 5), e("2026-10-13", 4), e("2026-10-07", 3), e("2026-10-06", 2), e("2026-10-01", 1)])).toBe("通常在周二、周三更新");
+    expect(updateCadence([e("2026-10-14", 4), e("2026-10-13", 3), e("2026-10-02", 2), e("2026-10-01", 1)])).toBeNull();
+    expect(updateCadence([e("2026-10-14", 3), e("2026-10-07", 2), e("2026-10-01", 1)])).toBeNull();
+  });
+});
+
+describe("markdown negotiation", () => {
+  it("serves Markdown only when asked for at least as much as HTML", async () => {
+    const { prefersMarkdown } = await import("@/lib/seo/negotiate");
+    expect(prefersMarkdown("text/markdown, text/html;q=0.9, */*;q=0.8")).toBe(true);
+    expect(prefersMarkdown("text/markdown")).toBe(true);
+    expect(prefersMarkdown("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")).toBe(false);
+    expect(prefersMarkdown("text/html, text/markdown;q=0.5")).toBe(false);
+    expect(prefersMarkdown("*/*")).toBe(false);
+    expect(prefersMarkdown(null)).toBe(false);
+  });
+});
