@@ -3,7 +3,8 @@ import type { TitleCard } from "@/lib/data/titles";
 import { titlePath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 
-export function PosterCard({ title, eager = false }: { title: TitleCard; eager?: boolean }) {
+/** `note`: an extra line under the year, e.g. the role on a person page. */
+export function PosterCard({ title, eager = false, note = null }: { title: TitleCard; eager?: boolean; note?: string | null }) {
   const poster = tmdbImage(title.poster_path, "w342");
   return (
     <Link href={titlePath(title.kind, title.slug)} className="group block min-w-0">
@@ -33,6 +34,7 @@ export function PosterCard({ title, eager = false }: { title: TitleCard; eager?:
         {title.year ?? ""}
         {title.vote_average ? <span className="ml-2 text-gold">★ {title.vote_average.toFixed(1)}</span> : null}
       </p>
+      {note ? <p className="truncate text-xs text-muted">{note}</p> : null}
     </Link>
   );
 }

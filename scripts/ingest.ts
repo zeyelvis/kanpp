@@ -14,6 +14,7 @@
  */
 import { parseArgs } from "node:util";
 import type { Db } from "@/lib/db/types";
+import { refreshPeople } from "@/lib/ingest/people";
 import { refreshTitles, storeCatalogCounts } from "@/lib/ingest/publish";
 import { refreshAiringSeries } from "@/lib/ingest/refresh";
 import { Resolver } from "@/lib/ingest/resolve";
@@ -123,6 +124,10 @@ async function main() {
   const published = await refreshTitles(db, touched);
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
+  const people = await refreshPeople(db);
+  log(`people: ${JSON.stringify(people)}`);
+  // New person slugs may have been cached as 404s, like new titles.
+  created ||= people.slugged > 0;
 
   if (target === "remote") {
     log(`revalidate: ${await notifySite({ titleIds: [...touched], created, catalog: true })}`);

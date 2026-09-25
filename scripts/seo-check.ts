@@ -143,7 +143,7 @@ async function main() {
   await Promise.all(Array.from({ length: 6 }, worker));
 
   // Non-canonical forms of a real title URL must 308 once to the canonical one.
-  const probe = sample[0];
+  const probe = sample.find((p) => !p.startsWith("/person/"));
   if (probe) {
     const [, segment, slug] = probe.split("/");
     const other = segment === "movie" ? "tv" : "movie";
@@ -160,8 +160,10 @@ async function main() {
     }
   }
 
-  const missing = await get("/movie/this-title-does-not-exist-1900");
-  if (missing.status !== 404) fail("/movie/this-title-does-not-exist-1900", "404", `got ${missing.status}`);
+  for (const path of ["/movie/this-title-does-not-exist-1900", "/person/this-person-does-not-exist"]) {
+    const missing = await get(path);
+    if (missing.status !== 404) fail(path, "404", `got ${missing.status}`);
+  }
 
   if (failures.length === 0) {
     console.log(`✓ all SEO checks passed (${seenTitles.size} pages)`);

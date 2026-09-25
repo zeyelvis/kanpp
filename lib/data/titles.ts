@@ -83,8 +83,8 @@ export interface Line {
   episodes: Episode[];
 }
 
-const CARD_COLUMNS = "t.id, t.kind, t.name, t.year, t.poster_path, t.latest_label, t.vote_average, s.slug";
-const CARD_JOIN = "FROM titles t JOIN slugs s ON s.title_id = t.id AND s.is_canonical = 1";
+export const CARD_COLUMNS = "t.id, t.kind, t.name, t.year, t.poster_path, t.latest_label, t.vote_average, s.slug";
+export const CARD_JOIN = "FROM titles t JOIN slugs s ON s.title_id = t.id AND s.is_canonical = 1";
 
 export const PAGE_SIZE = 36;
 
@@ -219,7 +219,7 @@ export function relatedTitles(t: { id: number; kind: Kind; genres: string[] }, l
 }
 
 /** Catalog sizes precomputed by the ingest run (falls back to counting if never stored). */
-function storedCount(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
+export function storedCount(key: string, fallbackSql: string, params: (string | number)[]): Promise<number> {
   return cachedQuery(["count", key], [TAG.catalog], 900, () => countQuery(key, fallbackSql, params));
 }
 

@@ -43,6 +43,7 @@ const TABLES: { name: string; key: string[]; insertOnly?: boolean }[] = [
   { name: "aliases", key: ["title_id", "norm"] },
   { name: "source_items", key: ["source_id", "vod_id"] },
   { name: "sync_state", key: ["key"] },
+  { name: "people", key: ["id"] }, // no foreign keys; slugs are permanent (trigger)
 ];
 // Rows go over D1's HTTP API as bound parameters, one transaction per batch: unlike a SQL file
 // import this never locks the database for the live site, and big rows are not limited by

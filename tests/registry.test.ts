@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { sqliteDb } from "@/lib/db/sqlite";
 import { ensureCanonicalSlug } from "@/lib/ingest/titles";
 import { upsertSourceRows } from "@/lib/ingest/source-rows";
+import { refreshPeople } from "@/lib/ingest/people";
 import { refreshTitles } from "@/lib/ingest/publish";
 import { Resolver } from "@/lib/ingest/resolve";
 import type { TmdbClient } from "@/lib/tmdb/client";
 
-const schema = readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8");
+const schema = ["0001_init.sql", "0003_people.sql"].map((f) => readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8")).join("\n");
 
 function freshDb() {
   const db = sqliteDb(":memory:");
@@ -157,5 +158,52 @@ describe("resolver: trailing number as season", () => {
     const sequel = await series(db, "中国奇谭2", [[1, "2026-01-01"]]);
     const out = await new Resolver(db, noTmdb).resolveRow(row("中国奇谭2", 2026));
     expect(out).toMatchObject({ status: "matched", titleId: sequel });
+  });
+});
+
+describe("people", () => {
+  async function titleWith(db: ReturnType<typeof freshDb>, name: string, cast: { id: number; name: string }[], crew: { id: number; name: string; job: string }[] = []) {
+    const { lastRowId } = await db.run(
+      "INSERT INTO titles (kind, name, year, tmdb_type, tmdb_id, indexable, cast_json, crew_json) VALUES ('tv', ?, 2020, 'tv', ?, 1, ?, ?)",
+      [name, Math.floor(Math.random() * 1e9), JSON.stringify(cast.map((c) => ({ ...c, character: "角色", profile: null }))), JSON.stringify(crew)],
+    );
+    return lastRowId!;
+  }
+
+  it("gives a page to Chinese-named people with three indexable titles, and keeps it stable", async () => {
+    const db = freshDb();
+    const zhou = { id: 1, name: "周迅" };
+    const en = { id: 2, name: "Tom Hanks" };
+    const two = { id: 3, name: "张三" };
+    const a = await titleWith(db, "甲", [zhou, en, two]);
+    await titleWith(db, "乙", [zhou, en, two]);
+    await titleWith(db, "丙", [en], [{ id: 1, name: "周迅", job: "导演" }]);
+
+    const first = await refreshPeople(db);
+    expect(first.slugged).toBe(1);
+    const rows = await db.all<{ id: number; slug: string | null; indexable: number; title_count: number }>("SELECT id, slug, indexable, title_count FROM people ORDER BY id");
+    expect(rows).toEqual([
+      { id: 1, slug: "周迅", indexable: 1, title_count: 3 },
+      { id: 2, slug: null, indexable: 0, title_count: 3 }, // not a Han-script name
+      { id: 3, slug: null, indexable: 0, title_count: 2 }, // too few titles
+    ]);
+    expect((await refreshPeople(db)).changed).toBe(0);
+
+    // A title leaves the index: the page is no longer indexable, but the slug is kept.
+    await db.run("UPDATE titles SET indexable = 0 WHERE id = ?", [a]);
+    await refreshPeople(db);
+    expect(await db.first("SELECT slug, indexable, title_count FROM people WHERE id = 1")).toEqual({ slug: "周迅", indexable: 0, title_count: 2 });
+    await expect(db.run("UPDATE people SET slug = 'x' WHERE id = 1")).rejects.toThrow(/permanent/);
+  });
+
+  it("disambiguates people who share a name", async () => {
+    const db = freshDb();
+    for (const n of ["一", "二", "三", "四"]) await titleWith(db, n, [{ id: 10, name: "王伟" }]);
+    for (const n of ["五", "六", "七"]) await titleWith(db, n, [{ id: 11, name: "王伟" }]);
+    await refreshPeople(db);
+    expect(await db.all("SELECT id, slug FROM people ORDER BY id")).toEqual([
+      { id: 10, slug: "王伟" },
+      { id: 11, slug: "王伟-2" },
+    ]);
   });
 });

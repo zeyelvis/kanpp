@@ -30,6 +30,10 @@ export function titlePath(kind: Kind, slug: string): string {
   return `/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}`;
 }
 
+export function personPath(slug: string): string {
+  return `/person/${encodeURIComponent(slug)}`;
+}
+
 export function seasonPath(kind: Kind, slug: string, season: number): string {
   return `${titlePath(kind, slug)}/s${season}`;
 }

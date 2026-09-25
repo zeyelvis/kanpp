@@ -9,11 +9,12 @@ import { FollowButton } from "@/components/library/FollowButton";
 import { PlayButton } from "@/components/library/PlayButton";
 import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
+import { personSlugs } from "@/lib/data/people";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons, relatedTitles, type Line, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
-import { seasonPath, titlePath, watchPath } from "@/lib/domain/slug";
+import { personPath, seasonPath, titlePath, watchPath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 import { describeTitle, pageTitle, titleJsonLd } from "@/lib/seo/title";
 
@@ -51,6 +52,22 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
       <dd className="min-w-0 text-ink/90">{children}</dd>
     </div>
   );
+}
+
+/** Names joined by " / ", linked to person pages where one exists. */
+function Names({ people, slugs }: { people: { id: number; name: string }[]; slugs: Record<number, string> }) {
+  return people.map((p, i) => (
+    <span key={p.id}>
+      {i > 0 ? " / " : null}
+      {slugs[p.id] ? (
+        <Link href={personPath(slugs[p.id])} className="hover:text-accent">
+          {p.name}
+        </Link>
+      ) : (
+        p.name
+      )}
+    </span>
+  ));
 }
 
 function SeriesStatus({ t }: { t: TitleDetail }) {
@@ -93,7 +110,12 @@ function LinesSummary({ t, lines }: { t: TitleDetail; lines: Line[] }) {
 
 export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">) {
   const t = await resolveTitleRoute(await params);
-  const [seasons, lines, related] = await Promise.all([getSeasons(t.id), getLines(t.id, t.tmdb_type), relatedTitles(t, 18)]);
+  const [seasons, lines, related, slugs] = await Promise.all([
+    getSeasons(t.id),
+    getLines(t.id, t.tmdb_type),
+    relatedTitles(t, 18),
+    personSlugs([...t.cast, ...t.crew].map((p) => p.id)),
+  ]);
 
   const backdrop = tmdbImage(t.backdrop_path, "w1280");
   const poster = tmdbImage(t.poster_path, "w500");
@@ -190,10 +212,10 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
               ) : null}
             </div>
             <dl className="space-y-1.5 rounded-xl bg-surface/60 p-4 ring-1 ring-line lg:self-start">
-              {directors.length ? <Fact label="导演">{directors.map((d) => d.name).join(" / ")}</Fact> : null}
-              {creators.length ? <Fact label="主创">{creators.map((d) => d.name).join(" / ")}</Fact> : null}
-              {writers.length ? <Fact label="编剧">{writers.map((d) => d.name).join(" / ")}</Fact> : null}
-              {t.cast.length ? <Fact label="主演">{t.cast.slice(0, 5).map((c) => c.name).join(" / ")}</Fact> : null}
+              {directors.length ? <Fact label="导演"><Names people={directors} slugs={slugs} /></Fact> : null}
+              {creators.length ? <Fact label="主创"><Names people={creators} slugs={slugs} /></Fact> : null}
+              {writers.length ? <Fact label="编剧"><Names people={writers} slugs={slugs} /></Fact> : null}
+              {t.cast.length ? <Fact label="主演"><Names people={t.cast.slice(0, 5)} slugs={slugs} /></Fact> : null}
               {t.release_date ? <Fact label={t.tmdb_type === "tv" ? "首播" : "上映"}>{t.release_date}</Fact> : null}
               {t.countries.length ? <Fact label="地区">{t.countries.map(countryLabel).join(" / ")}</Fact> : null}
             </dl>
@@ -255,11 +277,24 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
         <ScrollRail id="cast" title="演员">
           {t.cast.map((c) => (
             <li key={c.id} className="w-20 shrink-0 snap-start text-center sm:w-24">
-              <div className="mx-auto size-16 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line sm:size-20">
-                {c.profile ? <img src={tmdbImage(c.profile, "w185")!} alt={c.name} width={80} height={80} loading="lazy" className="size-full object-cover" /> : null}
-              </div>
-              <p className="mt-2 truncate text-sm">{c.name}</p>
-              {c.character ? <p className="truncate text-xs text-faint">{c.character}</p> : null}
+              {(() => {
+                const body = (
+                  <>
+                    <div className="mx-auto size-16 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line sm:size-20">
+                      {c.profile ? <img src={tmdbImage(c.profile, "w185")!} alt={c.name} width={80} height={80} loading="lazy" className="size-full object-cover" /> : null}
+                    </div>
+                    <p className="mt-2 truncate text-sm">{c.name}</p>
+                    {c.character ? <p className="truncate text-xs text-faint">{c.character}</p> : null}
+                  </>
+                );
+                return slugs[c.id] ? (
+                  <Link href={personPath(slugs[c.id])} className="block hover:text-accent">
+                    {body}
+                  </Link>
+                ) : (
+                  body
+                );
+              })()}
             </li>
           ))}
         </ScrollRail>
