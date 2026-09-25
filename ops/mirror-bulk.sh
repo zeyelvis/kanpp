@@ -12,6 +12,9 @@ LOG=data/mirror/logs
 WORKERS=${WORKERS:-3}
 FROM=${FROM:-426}
 FETCH=${FETCH:-1}
+# Resolver workers: each waits on several TMDB round trips per unknown title, so this, not
+# TMDB's rate limit, bounds throughput.
+RESOLVE_CONCURRENCY=${RESOLVE_CONCURRENCY:-64}
 mkdir -p "$LOG"
 [ -e data/mirror/checkout.lock ] || { echo "no mirror checked out: npx tsx scripts/mirror.ts pull"; exit 1; }
 
@@ -34,7 +37,7 @@ fi
 fetching() { pgrep -f "ingest.ts --db=$DB .*--fetch-only" >/dev/null; }
 sleep 30
 while true; do
-  out=$(npx tsx scripts/ingest.ts --db=$DB --resolve-only --limit=5000 --concurrency=32 2>&1 | tee -a "$LOG/resolve.log" | grep -E "resolve done|catalog:" | tr '\n' ' ')
+  out=$(npx tsx scripts/ingest.ts --db=$DB --resolve-only --limit=5000 --concurrency="$RESOLVE_CONCURRENCY" 2>&1 | tee -a "$LOG/resolve.log" | grep -E "resolve done|catalog:" | tr '\n' ' ')
   echo "$(date -u +%H:%M:%S) $out"
   if echo "$out" | grep -q '"processed":0'; then
     fetching || break
@@ -45,7 +48,7 @@ done
 # Rows that failed on a transient TMDB error get one more pass, then the whole catalog goes
 # through the publish gate once.
 sqlite3 data/mirror/kanpp.sqlite "UPDATE source_items SET match_status = 'pending' WHERE match_status = 'unmatched' AND match_note LIKE 'error:%'"
-npx tsx scripts/ingest.ts --db=$DB --resolve-only --limit=100000 --concurrency=32 >> "$LOG/resolve.log" 2>&1
+npx tsx scripts/ingest.ts --db=$DB --resolve-only --limit=100000 --concurrency="$RESOLVE_CONCURRENCY" >> "$LOG/resolve.log" 2>&1
 sqlite3 data/mirror/kanpp.sqlite "UPDATE sync_state SET value = '1', updated_at = datetime('now') WHERE key LIKE 'backfill:%'"
 npx tsx scripts/ingest.ts --db=$DB --resolve-only --limit=0 --republish 2>&1 | grep -E "publish gate|catalog:"
 echo "=== $(date -u +%H:%M:%S) mirror bulk finished: push with npx tsx scripts/mirror.ts push"

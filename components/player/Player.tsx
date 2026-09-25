@@ -1,10 +1,11 @@
 "use client";
 
 import type Hls from "hls.js";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FollowButton } from "@/components/library/FollowButton";
 import { formatClock, lastWatched, recordHistory, useHistory, type TitleRef } from "@/lib/client/library";
-import { parseWatchState, watchFragment, type WatchState } from "@/lib/domain/slug";
+import { parseWatchState, type WatchState } from "@/lib/domain/slug";
+import { useHash, writeHash } from "./hash";
 import { hlsConfig, isMobileClient } from "./hls-config";
 
 export interface PlayerLine {
@@ -23,24 +24,6 @@ interface Props {
   seasons: { number: number; name: string }[];
   /** Season shown when the URL fragment does not pick one (newest season with lines). */
   defaultSeason: number | null;
-}
-
-// The selected season/episode/line live in the URL fragment (one crawlable URL per title).
-// replaceState does not fire hashchange, so writes notify subscribers themselves.
-const hashListeners = new Set<() => void>();
-function subscribeHash(listener: () => void) {
-  hashListeners.add(listener);
-  window.addEventListener("hashchange", listener);
-  window.addEventListener("popstate", listener);
-  return () => {
-    hashListeners.delete(listener);
-    window.removeEventListener("hashchange", listener);
-    window.removeEventListener("popstate", listener);
-  };
-}
-function writeHash(state: WatchState) {
-  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${watchFragment(state)}`);
-  hashListeners.forEach((l) => l());
 }
 
 const RANGE = 50;
@@ -106,7 +89,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   const resumeAt = useRef<number | null>(null);
 
   // Server render has no fragment: it shows the default season, episode 1, first line.
-  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
+  const hash = useHash();
   const wanted = parseWatchState(hash);
   const seasonNumbers = new Set(lines.map((l) => l.season));
   const season = wanted.season != null && seasonNumbers.has(wanted.season) ? wanted.season : defaultSeason;

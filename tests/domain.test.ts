@@ -208,9 +208,9 @@ describe("stored play data", () => {
 
 describe("watch URLs", () => {
   it("keep one crawlable URL per title and put the selection in the fragment", () => {
-    expect(watchPath("tv", "兰香如故-2026")).toBe("/watch/tv/%E5%85%B0%E9%A6%99%E5%A6%82%E6%95%85-2026");
-    expect(watchPath("tv", "兰香如故-2026", { season: 1, ep: 3, line: "ikun" })).toBe("/watch/tv/%E5%85%B0%E9%A6%99%E5%A6%82%E6%95%85-2026#s=1&ep=3&line=ikun");
-    expect(watchPath("movie", "x-2020", { season: null, ep: null })).toBe("/watch/movie/x-2020");
+    expect(watchPath("tv", "兰香如故-2026")).toBe("/tv/%E5%85%B0%E9%A6%99%E5%A6%82%E6%95%85-2026#play");
+    expect(watchPath("tv", "兰香如故-2026", { season: 1, ep: 3, line: "ikun" })).toBe("/tv/%E5%85%B0%E9%A6%99%E5%A6%82%E6%95%85-2026#s=1&ep=3&line=ikun");
+    expect(watchPath("movie", "x-2020", { season: null, ep: null })).toBe("/movie/x-2020#play");
   });
   it("parses fragments and legacy query strings, dropping junk", () => {
     expect(parseWatchState("#s=2&ep=10&line=modu")).toEqual({ season: 2, ep: 10, line: "modu" });

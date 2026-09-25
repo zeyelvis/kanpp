@@ -150,6 +150,14 @@ async function main() {
     const other = segment === "movie" ? "tv" : "movie";
     await checkRedirect(`/${other}/${slug}`, probe);
     await checkRedirect(`/${segment}/${encodeURIComponent(slug)}`, probe); // double-encoded
+    // The player moved onto the title page: old /watch/ links land there, with a legacy
+    // ?ep= selection carried in the fragment.
+    await checkRedirect(`/watch${probe}`, probe);
+    const legacy = await get(`/watch${probe}?ep=2`);
+    const loc = legacy.location ? new URL(legacy.location, BASE) : null;
+    if (legacy.status !== 308 || !loc || decodeURI(loc.pathname) !== decodeURI(probe) || loc.hash !== "#ep=2") {
+      fail(`/watch${probe}?ep=2`, "redirect", `${legacy.status} -> ${legacy.location}, expected ${probe}#ep=2`);
+    }
   }
   // Production only: www must 308 to the apex, root included.
   const baseUrl = new URL(BASE);

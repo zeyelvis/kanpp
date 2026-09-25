@@ -65,11 +65,19 @@ export function parseWatchState(raw: string | URLSearchParams): WatchState {
 }
 
 /**
- * Player URL. There is exactly one crawlable URL per title; season/episode/line live in the
- * fragment, which crawlers ignore, so episodes x lines no longer multiply into thousands of URLs.
+ * Fragment that starts playback on the title page: the selection, or "#play" for the default
+ * episode. Any non-empty fragment opens the player.
+ */
+export function playFragment(state: WatchState = {}): string {
+  return watchFragment(state) || "#play";
+}
+
+/**
+ * Link that plays a title. The player lives on the title page itself (one crawlable URL per
+ * title); season/episode/line ride in the fragment, which crawlers ignore.
  */
 export function watchPath(kind: Kind, slug: string, state: WatchState = {}): string {
-  return `/watch/${KIND_SEGMENT[kind]}/${encodeURIComponent(slug)}${watchFragment(state)}`;
+  return `${titlePath(kind, slug)}${playFragment(state)}`;
 }
 
 /**

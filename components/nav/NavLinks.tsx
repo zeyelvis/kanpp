@@ -32,7 +32,6 @@ export function DesktopNav() {
 /** Phone channel chips under the header; scrolls horizontally with a fade hinting at more. */
 export function MobileChannelBar() {
   const pathname = usePathname();
-  if (pathname.startsWith("/watch/")) return null;
   return (
     <nav aria-label="频道" className="relative border-b border-line md:hidden">
       <div className="scrollbar-none flex gap-1 overflow-x-auto px-3 py-2 [mask-image:linear-gradient(to_right,black_85%,transparent)]">
