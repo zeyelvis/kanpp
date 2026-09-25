@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { scoreMatch, type CandidateSignal, type SourceSignal } from "@/lib/domain/match";
 import { cleanDisplayName, normalizeKey, stripGluedYear } from "@/lib/domain/normalize";
 import { hasAdultSignal, isPublishableName } from "@/lib/domain/safety";
-import { extractSeason, parseChineseNumber } from "@/lib/domain/season";
+import { extractSeason, parseChineseNumber, trailingSeason } from "@/lib/domain/season";
 import { baseSlug, decodeSlugParam, isOverEncoded, parseWatchState, titlePath, watchPath } from "@/lib/domain/slug";
 import { isNextEpisodeAhead, latestEpisodeNumber } from "@/lib/domain/labels";
 import { rankLines } from "@/lib/domain/line-rank";
@@ -252,5 +252,24 @@ describe("rankLines", () => {
     expect(ids(rankLines(lines, fine, {}))[0]).toBe("modu");
     const broken = { modu: { ok: 10, fail: 90 }, ikun: { ok: 10, fail: 90 }, wujin: { ok: 99, fail: 1 } };
     expect(ids(rankLines(lines, broken, {}))[0]).toBe("wujin");
+  });
+});
+
+describe("zero-width characters in source names", () => {
+  it("are ignored by display names and keys", () => {
+    expect(cleanDisplayName("\u200B怪物大师之穿越时空的怪物\u200B")).toBe("怪物大师之穿越时空的怪物");
+    expect(normalizeKey("怪物\uFEFF大师")).toBe(normalizeKey("怪物大师"));
+  });
+});
+
+describe("trailingSeason", () => {
+  it("reads a small trailing number after a Chinese name", () => {
+    expect(trailingSeason("乡村爱情18")).toEqual({ base: "乡村爱情", season: 18 });
+    expect(trailingSeason("同床异梦 2")).toEqual({ base: "同床异梦", season: 2 });
+  });
+  it("ignores years, 1, and names without Han characters before the number", () => {
+    expect(trailingSeason("请回答1988")).toBeNull();
+    expect(trailingSeason("某剧1")).toBeNull();
+    expect(trailingSeason("Friends 2")).toBeNull();
   });
 });

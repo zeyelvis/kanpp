@@ -230,7 +230,10 @@ export async function ensureCanonicalSlug(db: Db, titleId: number, name: string,
       await db.run("INSERT INTO slugs (slug, title_id, is_canonical) VALUES (?, ?, 1)", [candidate, titleId]);
       return candidate;
     } catch {
-      // Taken concurrently; try the next candidate.
+      // Either the candidate was taken concurrently (try the next one), or another worker
+      // resolving a row of the same title gave it its canonical slug meanwhile.
+      const now = await db.first<{ slug: string }>("SELECT slug FROM slugs WHERE title_id = ? AND is_canonical = 1", [titleId]);
+      if (now) return now.slug;
     }
   }
   throw new Error(`no free slug for title ${titleId}`);

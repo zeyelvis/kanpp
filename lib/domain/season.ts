@@ -34,3 +34,15 @@ export function extractSeason(name: string): { base: string; season: number | nu
   }
   return { base: name.trim(), season: null };
 }
+
+/**
+ * A bare trailing number on a series name ("乡村爱情18", "同床异梦 2") that may be its season.
+ * Only a fallback reading: callers try the full name first, since series whose name ends in
+ * a number are common too.
+ */
+export function trailingSeason(name: string): { base: string; season: number } | null {
+  const m = name.trim().match(/^(.*\p{Script=Han})\s*(\d{1,2})$/u);
+  if (!m) return null;
+  const season = Number(m[2]);
+  return season >= 2 && season <= 30 ? { base: m[1].trim(), season } : null;
+}

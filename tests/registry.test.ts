@@ -4,6 +4,8 @@ import { sqliteDb } from "@/lib/db/sqlite";
 import { ensureCanonicalSlug } from "@/lib/ingest/titles";
 import { upsertSourceRows } from "@/lib/ingest/source-rows";
 import { refreshTitles } from "@/lib/ingest/publish";
+import { Resolver } from "@/lib/ingest/resolve";
+import type { TmdbClient } from "@/lib/tmdb/client";
 
 const schema = readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8");
 
@@ -77,6 +79,13 @@ describe("registry invariants", () => {
     expect(row).toEqual({ match_status: "pending", title_id: null });
   });
 
+  it("gives a title one canonical slug when two workers race", async () => {
+    const id = await insertTitle(db, "飞天小女警", 1998);
+    const [a, b] = await Promise.all([ensureCanonicalSlug(db, id, "飞天小女警", 1998), ensureCanonicalSlug(db, id, "飞天小女警", 1998)]);
+    expect(a).toBe("飞天小女警-1998");
+    expect(b).toBe(a);
+  });
+
   it("skips blocked categories at the door", async () => {
     const stats = await upsertSourceRows(db, "feifan", [
       { vod_id: 1, vod_name: "某伦理片", type_name: "伦理片" },
@@ -116,5 +125,37 @@ describe("registry invariants", () => {
     expect((await refreshTitles(db, [id])).changed).toEqual([]); // nothing new
     await db.run("UPDATE source_items SET remarks = '更新至第2集', vod_time = '2026-09-25 10:00:00' WHERE title_id = ?", [id]);
     expect((await refreshTitles(db, [id])).changed).toEqual([id]);
+  });
+});
+
+describe("resolver: trailing number as season", () => {
+  // TMDB knows nothing here: only the local registry can match.
+  const noTmdb = { search: async () => [], details: async () => Promise.reject(new Error("unused")) } as unknown as TmdbClient;
+
+  async function series(db: ReturnType<typeof freshDb>, name: string, seasons: [number, string][]) {
+    const { lastRowId } = await db.run(
+      "INSERT INTO titles (kind, name, year, tmdb_type, tmdb_id) VALUES ('tv', ?, ?, 'tv', ?)",
+      [name, Number(seasons[0][1].slice(0, 4)), Math.floor(Math.random() * 1e9)],
+    );
+    await db.run("INSERT INTO aliases (title_id, norm, alias) VALUES (?, ?, ?)", [lastRowId, name, name]);
+    for (const [n, date] of seasons) await db.run("INSERT INTO seasons (title_id, season_number, air_date) VALUES (?, ?, ?)", [lastRowId, n, date]);
+    return lastRowId!;
+  }
+
+  const row = (vod_name: string, vod_year: number) => ({ source_id: "modu", vod_id: "1", vod_name, vod_year, type_name: "大陆剧", douban_id: null, actor: null, director: null });
+
+  it("reads 乡村爱情18 as season 18 when no work has that exact name", async () => {
+    const db = freshDb();
+    const id = await series(db, "乡村爱情", [[1, "2006-01-01"], [17, "2025-01-20"], [18, "2026-01-20"]]);
+    const out = await new Resolver(db, noTmdb).resolveRow(row("乡村爱情18", 2026));
+    expect(out).toMatchObject({ status: "matched", titleId: id, season: 18 });
+  });
+
+  it("prefers a work whose name really ends in the number", async () => {
+    const db = freshDb();
+    await series(db, "中国奇谭", [[1, "2023-01-01"], [2, "2026-01-01"]]);
+    const sequel = await series(db, "中国奇谭2", [[1, "2026-01-01"]]);
+    const out = await new Resolver(db, noTmdb).resolveRow(row("中国奇谭2", 2026));
+    expect(out).toMatchObject({ status: "matched", titleId: sequel });
   });
 });

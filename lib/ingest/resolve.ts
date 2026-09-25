@@ -3,7 +3,7 @@ import type { Kind } from "@/lib/domain/kinds";
 import { scoreMatch, type CandidateSignal, type MatchResult, type SourceSignal } from "@/lib/domain/match";
 import { cleanDisplayName, normalizeKey, splitPeople, stripGluedYear } from "@/lib/domain/normalize";
 import { hasAdultSignal, isCommentary } from "@/lib/domain/safety";
-import { extractSeason } from "@/lib/domain/season";
+import { extractSeason, trailingSeason } from "@/lib/domain/season";
 import { classifyCategory } from "@/lib/sources/categories";
 import { TmdbClient, type TmdbDetails, type TmdbType } from "@/lib/tmdb/client";
 import { toSimplified, toTraditional } from "./chinese";
@@ -125,6 +125,22 @@ export class Resolver {
       if (ext) return { status: "matched", titleId: ext.title_id, season: ext.season_number ?? signal.season, score: 1, note: "douban" };
     }
 
+    const outcome = await this.match(row, category, signal, base);
+    if (outcome.status === "matched" || category.tmdbType !== "tv" || signal.season != null) return outcome;
+    // "乡村爱情18", "同床异梦2": nothing carries the full name, so read the number as the season.
+    const numbered = trailingSeason(base);
+    if (!numbered) return outcome;
+    const retry = await this.match(row, category, { ...signal, keys: [normalizeKey(numbered.base)], season: numbered.season }, numbered.base);
+    return retry.status === "matched" ? { ...retry, note: `${retry.note} trailing-season` } : outcome;
+  }
+
+  /** Local registry by exact alias, then TMDB. */
+  private async match(
+    row: PendingRow,
+    category: { kind: Kind; tmdbType: TmdbType },
+    signal: SourceSignal,
+    base: string,
+  ): Promise<Outcome & { created?: boolean }> {
     // 2. Titles already in the registry under the same exact name.
     const local = await this.db.all<{ title_id: number }>(
       `SELECT DISTINCT title_id FROM aliases WHERE norm IN (${signal.keys.map(() => "?").join(",")})`,

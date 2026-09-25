@@ -23,7 +23,8 @@ const SEPARATOR = "[\\s._\\-·:：,，]";
  * what gets sent to TMDB search. `year` also strips a glued year equal to the row's own.
  */
 export function cleanDisplayName(input: string, year?: number | null): string {
-  let s = input.normalize("NFKC").trim();
+  // Zero-width characters (U+200B-U+200D, U+2060, BOM) survive NFKC and hide in source names.
+  let s = input.normalize("NFKC").replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").trim();
   s = s.replace(BRACKETS, " ");
   for (const tag of ASCII_NOISE_TAGS) {
     s = s.replace(new RegExp(`(^|${SEPARATOR})${escapeRegExp(tag)}(?=$|${SEPARATOR})`, "gi"), " ");
