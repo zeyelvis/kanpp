@@ -8,14 +8,16 @@
  *   npx tsx scripts/mirror.ts push --dry-run  show what would be pushed
  *   npx tsx scripts/mirror.ts push [--keep]   upsert rows changed since the snapshot, notify the site,
  *                                             release the lock (--keep: keep it and re-snapshot)
+ *   npx tsx scripts/mirror.ts push --keep --skip-pending   mid-run push of what is resolved so far
  *
  * While the lock exists nothing else may write remote D1 (ops/run-ingest.sh checks it): new
  * title ids are assigned locally and only line up if remote still equals the snapshot, which
  * push verifies before writing anything. Titles, slugs and aliases are never deleted, so
- * upserting the changed rows is the complete diff.
+ * upserting the changed rows is the complete diff. Ingest runs still writing the mirror are
+ * paused (SIGSTOP) during a push and resumed after it.
  */
 import { execFileSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
@@ -42,12 +44,21 @@ const TABLES: { name: string; key: string[]; insertOnly?: boolean }[] = [
   { name: "source_items", key: ["source_id", "vod_id"] },
   { name: "sync_state", key: ["key"] },
 ];
-const MAX_INLINE = 90_000; // D1 rejects SQL statements over 100 KB: bigger rows go over HTTP with bound params
-const FILE_BYTES = 40_000_000;
+// Rows go over D1's HTTP API as bound parameters, one transaction per batch: unlike a SQL file
+// import this never locks the database for the live site, and big rows are not limited by
+// D1's 100 KB statement size. The Cloudflare API allows ~4 requests/s per user.
+const BATCH_ROWS = 100;
+const BATCH_BYTES = 2_000_000;
+const PARALLEL = 2;
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
-  options: { "dry-run": { type: "boolean", default: false }, keep: { type: "boolean", default: false } },
+  options: {
+    "dry-run": { type: "boolean", default: false },
+    keep: { type: "boolean", default: false },
+    // Mid-run pushes: leave rows still waiting to be resolved for a later push.
+    "skip-pending": { type: "boolean", default: false },
+  },
 });
 
 const log = (...parts: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...parts);
@@ -88,72 +99,90 @@ function pull() {
   db.close();
 }
 
-function quote(v: SqlValue): string {
-  if (v === null || v === undefined) return "NULL";
-  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "NULL";
-  if (typeof v === "string") return `'${v.replaceAll("'", "''")}'`;
-  throw new Error(`unsupported value ${typeof v}`);
-}
+/**
+ * Runs up to `parallel` async tasks at once; the first failure stops further tasks and is
+ * rethrown by add() or drain().
+ */
+class Pipeline {
+  private inflight = new Set<Promise<void>>();
+  private failure: unknown = null;
+  constructor(private readonly parallel: number) {}
 
-interface TablePlan {
-  table: string;
-  rows: number;
-  files: string[];
-  large: Statement[];
-}
-
-/** Writes upsert SQL for every row that differs from the snapshot, per table, in import-sized files. */
-function planPush(db: DatabaseSync): { plans: TablePlan[]; changedTitleIds: number[] } {
-  const outDir = join(DIR, "push");
-  rmSync(outDir, { recursive: true, force: true });
-  mkdirSync(outDir, { recursive: true });
-  const plans: TablePlan[] = [];
-  let changedTitleIds: number[] = [];
-
-  for (const t of TABLES) {
-    const cols = (db.prepare(`PRAGMA main.table_info(${t.name})`).all() as { name: string }[]).map((c) => c.name);
-    const set = cols.filter((c) => !t.key.includes(c)).map((c) => `${c} = excluded.${c}`);
-    const tail = `) ON CONFLICT (${t.key.join(", ")}) ${t.insertOnly ? "DO NOTHING" : `DO UPDATE SET ${set.join(", ")}`};\n`;
-    const head = `INSERT INTO ${t.name} (${cols.join(", ")}) VALUES (`;
-    const plan: TablePlan = { table: t.name, rows: 0, files: [], large: [] };
-    let fd = -1;
-    let bytes = 0;
-    const rows = db.prepare(`SELECT * FROM main.${t.name} EXCEPT SELECT * FROM snap.${t.name}`).iterate() as Iterable<Record<string, SqlValue>>;
-    for (const row of rows) {
-      plan.rows++;
-      if (t.name === "titles") changedTitleIds.push(row.id as number);
-      const values = cols.map((c) => row[c]);
-      const sql = head + values.map(quote).join(", ") + tail;
-      if (Buffer.byteLength(sql) > MAX_INLINE || sql.includes("\u0000")) {
-        plan.large.push({ sql: head + cols.map(() => "?").join(", ") + tail.trimEnd(), params: values });
-        continue;
-      }
-      if (fd < 0 || bytes > FILE_BYTES) {
-        if (fd >= 0) closeSync(fd);
-        const file = join(outDir, `${t.name}-${String(plan.files.length + 1).padStart(3, "0")}.sql`);
-        plan.files.push(file);
-        fd = openSync(file, "w");
-        // Same header wrangler's own export uses; lets a title point at one later in the file.
-        bytes = writeSync(fd, "PRAGMA defer_foreign_keys = TRUE;\n");
-      }
-      bytes += writeSync(fd, sql);
-    }
-    if (fd >= 0) closeSync(fd);
-    plans.push(plan);
+  async add(task: () => Promise<void>) {
+    while (this.inflight.size >= this.parallel) await Promise.race(this.inflight);
+    if (this.failure) throw this.failure;
+    const p: Promise<void> = task()
+      .catch((err: unknown) => {
+        this.failure ??= err;
+      })
+      .finally(() => this.inflight.delete(p));
+    this.inflight.add(p);
   }
-  changedTitleIds = changedTitleIds.sort((a, b) => a - b);
-  return { plans, changedTitleIds };
+
+  async drain() {
+    await Promise.all(this.inflight);
+    if (this.failure) throw this.failure;
+  }
+}
+
+function sqlBytes(values: SqlValue[]): number {
+  return values.reduce<number>((n, v) => n + (typeof v === "string" ? Buffer.byteLength(v) : 8), 0);
+}
+
+/** Every row that differs from the snapshot, as upserts with bound parameters. */
+function* changedRows(db: DatabaseSync, t: (typeof TABLES)[number]): Generator<{ statement: Statement; row: Record<string, SqlValue> }> {
+  const cols = (db.prepare(`PRAGMA main.table_info(${t.name})`).all() as { name: string }[]).map((c) => c.name);
+  const set = cols.filter((c) => !t.key.includes(c)).map((c) => `${c} = excluded.${c}`);
+  const sql =
+    `INSERT INTO ${t.name} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ` +
+    `ON CONFLICT (${t.key.join(", ")}) ${t.insertOnly ? "DO NOTHING" : `DO UPDATE SET ${set.join(", ")}`}`;
+  const where = t.name === "source_items" && args["skip-pending"] ? "WHERE match_status <> 'pending'" : "";
+  const rows = db.prepare(`SELECT * FROM main.${t.name} ${where} EXCEPT SELECT * FROM snap.${t.name}`).iterate() as Iterable<
+    Record<string, SqlValue>
+  >;
+  for (const row of rows) yield { statement: { sql, params: cols.map((c) => row[c]) }, row };
+}
+
+/** SIGSTOP the ingest processes writing the mirror (so the diff is one consistent state). */
+function pauseWriters(): number[] {
+  let pids: number[] = [];
+  try {
+    pids = execFileSync("pgrep", ["-f", "scripts/ingest.ts --db=file:"], { encoding: "utf8" }).split("\n").filter(Boolean).map(Number);
+  } catch {
+    return [];
+  }
+  for (const pid of pids) process.kill(pid, "SIGSTOP");
+  return pids;
+}
+
+function resumeWriters(pids: number[]) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGCONT");
+    } catch {
+      // Already gone.
+    }
+  }
 }
 
 async function push() {
   if (!existsSync(LOCK) || !existsSync(SNAPSHOT)) throw new Error("no mirror checked out: run `mirror.ts pull` first");
-  if (ingestRunning("scripts/ingest.ts --db=file:")) throw new Error("an ingest run is still writing the mirror: stop it first");
+  const paused = pauseWriters();
+  if (paused.length) log(`paused ${paused.length} ingest processes writing the mirror`);
+  try {
+    await pushPaused();
+  } finally {
+    resumeWriters(paused);
+    if (paused.length) log("resumed them");
+  }
+}
 
+async function pushPaused() {
   const db = new DatabaseSync(MIRROR);
   db.exec(`ATTACH '${SNAPSHOT}' AS snap`);
-  const snapCounts = counts(db, "snap");
-  const snapMaxId = (db.prepare("SELECT COALESCE(MAX(id), 0) AS n FROM snap.titles").get() as { n: number }).n;
-  const { plans, changedTitleIds } = planPush(db);
+  const one = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+  const snapMaxId = one("SELECT COALESCE(MAX(id), 0) AS n FROM snap.titles");
+  const mirrorMaxId = one("SELECT COALESCE(MAX(id), 0) AS n FROM main.titles");
   // Pages worth announcing: newly indexable, or showing a new episode label.
   const announce = (
     db
@@ -163,26 +192,48 @@ async function push() {
       )
       .all() as { id: number }[]
   ).map((r) => r.id);
-  const created = changedTitleIds.filter((id) => id > snapMaxId).length;
-  for (const p of plans) log(`${p.table}: ${p.rows} changed rows, ${p.files.length} files, ${p.large.length} large`);
-  log(`titles: ${created} new, ${changedTitleIds.length - created} updated, ${announce.length} to announce`);
-  if (args["dry-run"]) return;
 
-  const remote = openDb("remote");
-  // Remote must still be the snapshot we pulled, or locally assigned ids would collide.
-  const remoteMaxId = (await remote.first<{ n: number }>("SELECT COALESCE(MAX(id), 0) AS n FROM titles"))?.n;
-  const remoteSources = (await remote.first<{ n: number }>("SELECT COUNT(*) AS n FROM source_items"))?.n;
-  if (remoteMaxId !== snapMaxId || remoteSources !== snapCounts.source_items) {
-    throw new Error(`remote changed since pull (max title id ${remoteMaxId} vs ${snapMaxId}, source rows ${remoteSources} vs ${snapCounts.source_items})`);
+  if (args["dry-run"]) {
+    for (const t of TABLES) {
+      let n = 0;
+      for (const _ of changedRows(db, t)) n++;
+      log(`${t.name}: ${n} changed rows`);
+    }
+    log(`titles: ${mirrorMaxId - snapMaxId} new, ${announce.length} to announce`);
+    return;
   }
 
-  for (const p of plans) {
-    for (const file of p.files) {
-      log(`import ${file.slice(ROOT.length + 1)}`);
-      wrangler(["d1", "execute", DB_NAME, "--remote", `--file=${file}`, "--yes"]);
+  const remote = openDb("remote");
+  // Remote must not have moved past the snapshot except by an earlier, interrupted push of
+  // this same mirror; otherwise locally assigned title ids could collide.
+  const remoteMaxId = (await remote.first<{ n: number }>("SELECT COALESCE(MAX(id), 0) AS n FROM titles"))?.n ?? 0;
+  if (remoteMaxId < snapMaxId || remoteMaxId > mirrorMaxId) {
+    throw new Error(`remote changed since pull (max title id ${remoteMaxId}, snapshot ${snapMaxId}, mirror ${mirrorMaxId})`);
+  }
+
+  const changedTitleIds: number[] = [];
+  for (const t of TABLES) {
+    const pipeline = new Pipeline(PARALLEL);
+    let batch: Statement[] = [];
+    let bytes = 0;
+    let rows = 0;
+    const flush = async () => {
+      const statements = batch;
+      batch = [];
+      bytes = 0;
+      if (statements.length) await pipeline.add(async () => void (await remote.batch(statements)));
+    };
+    for (const { statement, row } of changedRows(db, t)) {
+      if (t.name === "titles") changedTitleIds.push(row.id as number);
+      batch.push(statement);
+      bytes += sqlBytes(statement.params ?? []);
+      rows++;
+      if (batch.length >= BATCH_ROWS || bytes >= BATCH_BYTES) await flush();
+      if (rows % 20_000 === 0) log(`${t.name}: ${rows} rows sent`);
     }
-    for (let i = 0; i < p.large.length; i += 10) await remote.batch(p.large.slice(i, i + 10));
-    if (p.large.length) log(`${p.table}: ${p.large.length} large rows over HTTP`);
+    await flush();
+    await pipeline.drain();
+    log(`${t.name}: ${rows} changed rows pushed`);
   }
 
   const mirrorCounts = counts(db);
@@ -193,13 +244,20 @@ async function push() {
 
   // New titles were never cached (only as 404s, which `created` clears); updated ones were.
   const updated = changedTitleIds.filter((id) => id <= snapMaxId);
-  log(`revalidate: ${await notifySite({ titleIds: updated, created: created > 0, catalog: true })}`);
+  log(`revalidate: ${await notifySite({ titleIds: updated, created: mirrorMaxId > snapMaxId, catalog: true })}`);
   log(`indexnow: ${await announceTitles(remote, announce)}`);
 
   db.exec("DETACH snap");
   if (args.keep) {
     rmSync(SNAPSHOT, { force: true });
     db.exec(`VACUUM INTO '${SNAPSHOT}'`);
+    if (args["skip-pending"]) {
+      // The snapshot must not claim rows that were not pushed: forgetting all pending rows
+      // only means some get upserted again later.
+      const snap = new DatabaseSync(SNAPSHOT);
+      snap.exec("DELETE FROM source_items WHERE match_status = 'pending'");
+      snap.close();
+    }
     log("pushed; mirror stays checked out with a fresh snapshot");
   } else {
     rmSync(LOCK, { force: true });
@@ -212,7 +270,7 @@ async function main() {
   const command = positionals[0];
   if (command === "pull") return pull();
   if (command === "push") return push();
-  throw new Error("usage: mirror.ts pull | push [--dry-run] [--keep]");
+  throw new Error("usage: mirror.ts pull | push [--dry-run] [--keep] [--skip-pending]");
 }
 
 main()

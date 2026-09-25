@@ -64,7 +64,8 @@ async function fetchPages(db: Db, source: CmsSource, from: number, count: number
 async function main() {
   const target = parseDbTarget(args.db);
   const db = openDb(target);
-  const tmdb = new TmdbClient(process.env.TMDB_API_KEY ?? "");
+  // TMDB allows roughly 40-50 requests/s per IP; 429s are retried with Retry-After.
+  const tmdb = new TmdbClient(process.env.TMDB_API_KEY ?? "", Number(process.env.TMDB_CONCURRENCY ?? 16));
   const touched = new Set<number>();
   let created = false;
   const selected = args.sources ? SOURCES.filter((s) => args.sources!.split(",").includes(s.id)) : SOURCES;
