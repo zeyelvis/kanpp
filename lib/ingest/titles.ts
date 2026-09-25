@@ -56,6 +56,17 @@ export function aliasesFromDetails(d: TmdbDetails, name: string | null): AliasRo
   return [...out.values()];
 }
 
+/**
+ * The fullest Chinese synopsis TMDB has: the zh-CN one is often a one-liner while the Taiwan
+ * or Hong Kong translation is a full paragraph (converted to simplified).
+ */
+export function bestTmdbOverview(d: TmdbDetails): string | null {
+  const candidates = [d.overview, ...(d.translations?.translations ?? []).filter((t) => t.iso_639_1 === "zh").map((t) => t.data.overview)]
+    .filter((o): o is string => Boolean(o && HAN.test(o)))
+    .map((o) => toSimplified(o).trim());
+  return candidates.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
 export function yearOf(date: string | null | undefined): number | null {
   const y = Number((date ?? "").slice(0, 4));
   return y >= 1900 ? y : null;
@@ -119,7 +130,7 @@ export function titleFieldsFromDetails(d: TmdbDetails, type: TmdbType, kind: Kin
     tmdb_type: type,
     tmdb_id: d.id,
     imdb_id: d.external_ids?.imdb_id || null,
-    overview: d.overview ? toSimplified(d.overview).trim() : null,
+    overview: bestTmdbOverview(d),
     tagline: d.tagline ? toSimplified(d.tagline).trim() : null,
     poster_path: d.poster_path ?? null,
     backdrop_path: d.backdrop_path ?? null,
@@ -161,11 +172,14 @@ const FIELD_NAMES = [
  */
 export async function upsertTitleFromTmdb(db: Db, d: TmdbDetails, type: TmdbType, kind: Kind): Promise<{ id: number; created: boolean }> {
   const fields = titleFieldsFromDetails(d, type, kind);
-  const hash = contentHash(fields);
-  const existing = await db.first<{ id: number; content_hash: string | null; kind: Kind }>(
-    "SELECT id, content_hash, kind FROM titles WHERE tmdb_type = ? AND tmdb_id = ?",
+  const existing = await db.first<{ id: number; content_hash: string | null; kind: Kind; overview: string | null }>(
+    "SELECT id, content_hash, kind, overview FROM titles WHERE tmdb_type = ? AND tmdb_id = ?",
     [type, d.id],
   );
+  // A fuller synopsis found earlier (e.g. from the sources, scripts/enrich-overviews.ts) is
+  // not replaced by a shorter TMDB one on refresh.
+  if (existing?.overview && existing.overview.length > (fields.overview?.length ?? 0)) fields.overview = existing.overview;
+  const hash = contentHash(fields);
 
   let id: number;
   let created = false;

@@ -10,14 +10,14 @@ import { PlayButton } from "@/components/library/PlayButton";
 import { WatchStage } from "@/components/player/WatchStage";
 import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
-import { personSlugs } from "@/lib/data/people";
+import { castOtherWorks, personSlugs } from "@/lib/data/people";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons, relatedTitles, type Line, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { personPath, playFragment, seasonPath, titlePath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
-import { describeTitle, pageTitle, titleJsonLd } from "@/lib/seo/title";
+import { describeTitle, pageTitle, titleFacts, titleJsonLd } from "@/lib/seo/title";
 
 // Rendered on first request, then served from the edge cache (ISR). Ingest invalidates the
 // title's tag after changes; nothing is prerendered at build time (the build has no D1).
@@ -119,6 +119,9 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
     personSlugs([...t.cast, ...t.crew].map((p) => p.id).filter((id): id is number => id != null)),
   ]);
 
+  // Other titles by up to three leads with person pages: links between titles and people.
+  const leads = t.cast.filter((c) => c.id != null && slugs[c.id]).slice(0, 3);
+  const castWorks = leads.length ? await castOtherWorks(leads.map((c) => c.id!), t.id, 18) : [];
   const backdrop = tmdbImage(t.backdrop_path, "w1280");
   const poster = tmdbImage(t.poster_path, "w342");
   const directors = t.crew.filter((c) => c.job === "导演");
@@ -215,7 +218,13 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
       </div>
 
       <section className="mx-auto mt-10 grid max-w-7xl gap-6 px-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-4">
+        <div className="space-y-6">
+          <section aria-labelledby="facts">
+            <h2 id="facts" className="mb-2 text-lg font-semibold">
+              作品速览
+            </h2>
+            <p className="leading-7 text-ink/85">{titleFacts(t, lines)}</p>
+          </section>
           {t.tagline ? <p className="italic text-muted">“{t.tagline}”</p> : null}
           {t.overview ? (
             <section aria-labelledby="overview">
@@ -284,6 +293,8 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
           ))}
         </ScrollRail>
       ) : null}
+
+      <PosterRail id="cast-works" title={leads.length === 1 ? `${leads[0].name}的其他作品` : "主演的其他作品"} titles={castWorks} />
 
       <PosterRail
         id="related"

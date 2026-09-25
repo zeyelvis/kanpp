@@ -1,9 +1,10 @@
 import { absoluteUrl, site } from "@/lib/config/site";
 import type { Season, TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
-import { countryLabel } from "@/lib/domain/labels";
+import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { seasonPath, titlePath } from "@/lib/domain/slug";
 import { tmdbImageUrl } from "@/lib/images";
+import { lastModified } from "@/lib/seo/sitemap";
 
 function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, " ").trim();
@@ -18,7 +19,7 @@ export function pageTitle(t: TitleDetail): string {
  * One factual sentence built only from fields we have, then the synopsis. Missing facts are
  * left out rather than filled with defaults.
  */
-export function describeTitle(t: TitleDetail, max = 150): string {
+function factLead(t: TitleDetail): string {
   const region = t.countries.slice(0, 2).map(countryLabel).join("、");
   const genres = t.genres.slice(0, 2).join("、");
   let lead = `《${t.name}》是${t.year ? `${t.year}年` : ""}${region ? `${region}` : ""}${genres ? `${genres}` : ""}${KIND_LABEL[t.kind]}`;
@@ -26,8 +27,54 @@ export function describeTitle(t: TitleDetail, max = 150): string {
   if (directors.length) lead += `，${directors.join("、")}${t.tmdb_type === "tv" ? "主创" : "执导"}`;
   const actors = t.cast.slice(0, 3).map((c) => c.name);
   if (actors.length) lead += `，${actors.join("、")}主演`;
-  lead += "。";
-  return clip(`${lead}${t.overview ?? ""}`, max);
+  return `${lead}。`;
+}
+
+export function describeTitle(t: TitleDetail, max = 150): string {
+  return clip(`${factLead(t)}${t.overview ?? ""}`, max);
+}
+
+/** "2026年9月25日" (China time) from the later of the record's and the sources' update times. */
+function updatedOn(t: TitleDetail): string | null {
+  const iso = lastModified(t.updated_at, t.source_updated_at);
+  if (!iso) return null;
+  const d = new Date(Date.parse(iso) + 8 * 3600_000);
+  return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+}
+
+/**
+ * The page's fact summary: short sentences built only from data we hold (no defaults), easy
+ * for readers to scan and for AI answers to quote.
+ */
+export function titleFacts(t: TitleDetail, lines: { sourceId: string; adIntro: boolean }[]): string {
+  const sentences = [factLead(t).slice(0, -1)];
+  if (t.tmdb_type === "tv") {
+    const bits: string[] = [];
+    if (t.number_of_seasons) bits.push(`共${t.number_of_seasons}季`);
+    const status = tvStatusLabel(t.tv_status);
+    if (status) bits.push(status);
+    const label = t.latest_label?.trim();
+    if (label) {
+      if (/^更新/.test(label)) bits.push(`目前${label}`);
+      else if (/完结|全/.test(label)) bits.push(label);
+      else if (/^第?\d+集$/.test(label)) bits.push(`已更新到${label.startsWith("第") ? label : `第${label}`}`);
+      else bits.push(`最新一期：${label}`);
+    }
+    const next = isNextEpisodeAhead(t) ? shortDate(t.next_episode_date) : null;
+    if (next) bits.push(`下一集预计${next}播出`);
+    if (bits.length) sentences.push(bits.join("，"));
+  } else {
+    const runtime = formatRuntime(t.runtime);
+    if (runtime) sentences.push(`片长${runtime}`);
+  }
+  const sources = new Map(lines.map((l) => [l.sourceId, l.adIntro]));
+  if (sources.size) {
+    const clean = [...sources.values()].filter((ad) => !ad).length;
+    sentences.push(`${site.name}有${sources.size}条播放线路${clean > 0 && clean < sources.size ? `，其中${clean}条没有片头广告` : ""}`);
+  }
+  const updated = updatedOn(t);
+  if (updated) sentences.push(`资料更新于${updated}`);
+  return `${sentences.join("。")}。`;
 }
 
 function isoDuration(minutes: number | null): string | undefined {

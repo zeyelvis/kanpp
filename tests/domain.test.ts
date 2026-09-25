@@ -310,3 +310,20 @@ describe("security headers", () => {
     expect(res.headers.get("Strict-Transport-Security")).toMatch(/max-age=\d+/);
   });
 });
+
+describe("title fact summary", () => {
+  it("states only the facts it has", async () => {
+    const { titleFacts } = await import("@/lib/seo/title");
+    const base = {
+      name: "泰德拉索", year: 2020, kind: "tv", tmdb_type: "tv", countries: ["US"], genres: ["剧情", "喜剧"], crew: [], cast: [{ id: 1, name: "杰森·苏戴奇斯", character: null, profile: null }],
+      number_of_seasons: 4, tv_status: "Returning Series", latest_label: "更新至第8集", next_episode_date: null, next_episode_number: null, next_episode_season: null,
+      runtime: null, updated_at: "2026-09-25 03:00:00", source_updated_at: "2026-09-25 11:00:00",
+    } as never;
+    const text = titleFacts(base, [{ sourceId: "modu", adIntro: false }, { sourceId: "wujin", adIntro: true }]);
+    expect(text).toBe("《泰德拉索》是2020年美国剧情、喜剧电视剧，杰森·苏戴奇斯主演。共4季，连载中，目前更新至第8集。看片片有2条播放线路，其中1条没有片头广告。资料更新于2026年9月25日。");
+    expect(titleFacts({ ...(base as object), latest_label: "第288集" } as never, [])).toContain("已更新到第288集");
+    expect(titleFacts({ ...(base as object), latest_label: "20260925期" } as never, [])).toContain("最新一期：20260925期");
+    const movie = titleFacts({ ...(base as object), tmdb_type: "movie", kind: "movie", runtime: 95, cast: [], countries: [], genres: [] } as never, []);
+    expect(movie).toBe("《泰德拉索》是2020年电影。片长1小时35分钟。资料更新于2026年9月25日。");
+  });
+});

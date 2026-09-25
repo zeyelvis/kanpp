@@ -56,6 +56,26 @@ export const personCredits = cache((personId: number): Promise<PersonCredit[]> =
   }),
 );
 
+/**
+ * Other titles by the given people (cast with person pages), interleaved so each person is
+ * represented, newest first per person, without the current title.
+ */
+export async function castOtherWorks(personIds: number[], excludeTitleId: number, limit: number): Promise<PersonCredit[]> {
+  const lists = await Promise.all(personIds.map((id) => personCredits(id)));
+  const seen = new Set([excludeTitleId]);
+  const out: PersonCredit[] = [];
+  for (let i = 0; out.length < limit && lists.some((l) => i < l.length); i++) {
+    for (const list of lists) {
+      const t = list[i];
+      if (t && !seen.has(t.id) && out.length < limit) {
+        seen.add(t.id);
+        out.push(t);
+      }
+    }
+  }
+  return out;
+}
+
 /** Slugs of the given people that have an indexable page (for linking cast lists). */
 export function personSlugs(ids: number[]): Promise<Record<number, string>> {
   const unique = [...new Set(ids)].sort((a, b) => a - b).slice(0, 90);
