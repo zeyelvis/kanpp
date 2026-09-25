@@ -127,7 +127,7 @@ export function WatchStage({ title, backdrop, poster = null, playable, header, p
               {active && !failed ? (
                 <span className="size-10 animate-spin rounded-full border-2 border-white/25 border-t-accent" aria-label="加载中" />
               ) : (
-                <span className="grid size-16 place-items-center rounded-full bg-accent pl-1 text-2xl text-white shadow-xl shadow-black/40 transition group-hover:scale-105 sm:size-20 sm:text-3xl">
+                <span className="grid size-16 place-items-center rounded-full bg-accent-fill pl-1 text-2xl text-white shadow-xl shadow-black/40 transition group-hover:scale-105 sm:size-20 sm:text-3xl">
                   ▶
                 </span>
               )}

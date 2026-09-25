@@ -87,7 +87,7 @@ export default async function SeasonPage({ params }: PageProps<"/[kind]/[slug]/[
           {seasonLines.length ? (
             <Link
               href={watchPath(t.kind, t.slug, { season: n })}
-              className="inline-flex h-11 items-center rounded-full bg-accent px-7 font-semibold text-white hover:brightness-110"
+              className="inline-flex h-11 items-center rounded-full bg-accent-fill px-7 font-semibold text-white hover:brightness-90"
             >
               ▶ 播放第{n}季
             </Link>
@@ -115,7 +115,7 @@ export default async function SeasonPage({ params }: PageProps<"/[kind]/[slug]/[
                 <Link
                   href={seasonPath(t.kind, t.slug, x.season_number)}
                   aria-current={x.season_number === n ? "page" : undefined}
-                  className={`inline-block rounded-md px-3 py-1.5 text-sm ${x.season_number === n ? "bg-accent text-white" : "bg-surface hover:bg-surface-2"}`}
+                  className={`inline-block rounded-md px-3 py-1.5 text-sm ${x.season_number === n ? "bg-accent-fill text-white" : "bg-surface hover:bg-surface-2"}`}
                 >
                   {x.name ?? `第${x.season_number}季`}
                 </Link>

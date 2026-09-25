@@ -61,7 +61,7 @@ function EpisodeGrid({ episodes, current, onPick }: { episodes: { name: string }
                 type="button"
                 onClick={() => onPick(i)}
                 aria-current={i === current ? "true" : undefined}
-                className={`w-full truncate rounded-md px-2 py-2 text-sm transition ${i === current ? "bg-accent font-medium text-white" : "bg-surface-2 hover:bg-line"}`}
+                className={`w-full truncate rounded-md px-2 py-2 text-sm transition ${i === current ? "bg-accent-fill font-medium text-white" : "bg-surface-2 hover:bg-line"}`}
               >
                 {e.name}
               </button>
@@ -378,7 +378,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
                 <p className="mt-1 text-lg font-semibold">{line.episodes[epIndex + 1]?.name}</p>
                 <p className="mt-1 text-3xl font-bold text-accent">{countdown}</p>
                 <div className="mt-4 flex justify-center gap-3">
-                  <button type="button" onClick={() => goEpisode(epIndex + 1)} className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-white">
+                  <button type="button" onClick={() => goEpisode(epIndex + 1)} className="rounded-full bg-accent-fill px-5 py-2 text-sm font-medium text-white">
                     立即播放
                   </button>
                   <button type="button" onClick={() => setCountdown(null)} className="rounded-full bg-white/10 px-5 py-2 text-sm">
@@ -415,7 +415,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
               上次看到{saved.season && seasons.length > 1 ? `第${saved.season}季 ` : ""}
               {saved.epName} {formatClock(saved.t)}
             </span>
-            <button type="button" onClick={resume} className="rounded-md bg-accent px-3 py-1 font-medium text-white">
+            <button type="button" onClick={resume} className="rounded-md bg-accent-fill px-3 py-1 font-medium text-white">
               继续播放
             </button>
             <button type="button" onClick={() => setResumeDismissed(true)} className="text-muted hover:text-ink">
@@ -438,7 +438,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
                 }}
                 className={`rounded-lg px-3 py-1.5 text-sm ring-1 ${
                   l.sourceId === line.sourceId
-                    ? "bg-accent text-white ring-accent"
+                    ? "bg-accent-fill text-white ring-accent"
                     : failed.has(l.sourceId)
                       ? "bg-surface text-faint line-through ring-line"
                       : "bg-surface ring-line hover:ring-accent/60"
@@ -464,7 +464,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
                     setLineId(null);
                     goEpisode(0);
                   }}
-                  className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${s.number === season ? "bg-accent text-white" : "bg-surface hover:bg-surface-2"}`}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${s.number === season ? "bg-accent-fill text-white" : "bg-surface hover:bg-surface-2"}`}
                 >
                   {s.name}
                 </button>

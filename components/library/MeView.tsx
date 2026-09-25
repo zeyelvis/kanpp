@@ -46,7 +46,7 @@ function FollowsTab() {
     return (
       <div className="py-16 text-center text-muted">
         <p>还没有追的剧。在任意作品页点「＋ 追剧」，有新集数时这里会提醒你。</p>
-        <Link href="/schedule" className="mt-4 inline-block rounded-full bg-accent px-6 py-2.5 text-sm font-medium text-white">
+        <Link href="/schedule" className="mt-4 inline-block rounded-full bg-accent-fill px-6 py-2.5 text-sm font-medium text-white">
           看看追剧日历
         </Link>
       </div>
@@ -62,7 +62,7 @@ function FollowsTab() {
           <div className="flex min-w-0 flex-1 flex-col py-1">
             <Link href={titlePath(f.kind, f.slug)} className="flex items-center gap-2">
               <span className="truncate font-medium hover:text-accent">{f.name}</span>
-              {updated ? <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">有更新</span> : null}
+              {updated ? <span className="shrink-0 rounded bg-accent-fill px-1.5 py-0.5 text-[10px] font-semibold text-white">有更新</span> : null}
             </Link>
             <p className="mt-1 truncate text-sm text-ink/80">{c?.latest_label ?? f.seenLabel ?? ""}</p>
             {c && isNextEpisodeAhead(c) ? (
@@ -72,7 +72,7 @@ function FollowsTab() {
               </p>
             ) : null}
             <div className="mt-auto flex gap-2 pt-2">
-              <Link href={watchPath(f.kind, f.slug)} className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white">
+              <Link href={watchPath(f.kind, f.slug)} className="rounded-md bg-accent-fill px-3 py-1 text-xs font-medium text-white">
                 播放
               </Link>
               <button type="button" onClick={() => toggleFollow({ ...f, latestLabel: f.seenLabel })} className="rounded-md px-3 py-1 text-xs text-muted ring-1 ring-line hover:text-ink">
@@ -113,7 +113,7 @@ function HistoryTab() {
                 {h.poster ? <img src={tmdbImage(h.poster, "w185")!} alt="" className="h-28 w-[75px] rounded-md object-cover" /> : <span className="block h-28 w-[75px] rounded-md bg-surface-2" />}
                 {pct != null ? (
                   <span className="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-md bg-white/20">
-                    <span className="block h-full bg-accent" style={{ width: `${pct}%` }} />
+                    <span className="block h-full bg-accent-fill" style={{ width: `${pct}%` }} />
                   </span>
                 ) : null}
               </Link>
@@ -126,7 +126,7 @@ function HistoryTab() {
                 </p>
                 <p className="text-xs text-faint">{new Date(h.at).toLocaleDateString("zh-CN")}</p>
                 <div className="mt-auto flex gap-2 pt-2">
-                  <Link href={watchPath(h.kind, h.slug, { season: h.season, ep: h.ep + 1 })} className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white">
+                  <Link href={watchPath(h.kind, h.slug, { season: h.season, ep: h.ep + 1 })} className="rounded-md bg-accent-fill px-3 py-1 text-xs font-medium text-white">
                     继续播放
                   </Link>
                   <button type="button" onClick={() => removeHistory(h.id)} className="rounded-md px-3 py-1 text-xs text-muted ring-1 ring-line hover:text-ink">

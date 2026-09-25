@@ -51,7 +51,7 @@ export function EpisodeLinks({
       <ol className={`grid grid-cols-4 gap-2 sm:grid-cols-6 ${compact ? "lg:grid-cols-4" : "md:grid-cols-8 lg:grid-cols-10"}`}>
         {shown.map((name, k) => {
           const state = { season, ep: start + k + 1 };
-          const cls = "block truncate rounded-md bg-surface-2 px-2 py-2 text-center text-sm transition hover:bg-accent hover:text-white";
+          const cls = "block truncate rounded-md bg-surface-2 px-2 py-2 text-center text-sm transition hover:bg-accent-fill hover:text-white";
           return (
             <li key={start + k}>
               {samePage ? (

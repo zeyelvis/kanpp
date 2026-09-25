@@ -7,8 +7,11 @@
   --color-line: rgb(255 255 255 / 0.08);
   --color-ink: #eef0f5;
   --color-muted: #9ba1b4;
-  --color-faint: #6b7185;
+  /* Text colors meet WCAG AA (4.5:1) on bg, surface and surface-2. */
+  --color-faint: #858b9f;
+  /* accent: text and icons on dark (6.7:1). accent-fill: backgrounds under white text (4.6:1). */
   --color-accent: #ff6a3d;
+  --color-accent-fill: #d0461f;
   --color-accent-soft: rgb(255 106 61 / 0.14);
   --color-gold: #ffb547;
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC",

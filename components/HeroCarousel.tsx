@@ -86,7 +86,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
                   </p>
                   {s.overview ? <p className="mt-3 hidden text-sm leading-6 text-ink/75 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden sm:block">{s.overview}</p> : null}
                   <div className="mt-4 flex gap-3">
-                    <Link href={watchPath(s.kind, s.slug)} className="inline-flex h-10 items-center rounded-full bg-accent px-6 text-sm font-semibold text-white hover:brightness-110">
+                    <Link href={watchPath(s.kind, s.slug)} className="inline-flex h-10 items-center rounded-full bg-accent-fill px-6 text-sm font-semibold text-white hover:brightness-90">
                       ▶ 播放
                     </Link>
                     <Link href={titlePath(s.kind, s.slug)} className="inline-flex h-10 items-center rounded-full bg-white/10 px-6 text-sm ring-1 ring-white/20 backdrop-blur hover:bg-white/20">

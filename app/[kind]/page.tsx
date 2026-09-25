@@ -62,7 +62,7 @@ function ChipRow({ label, options, active, hrefFor }: { label: string; options: 
             href={hrefFor(o.value)}
             rel="nofollow"
             aria-current={o.value === active ? "true" : undefined}
-            className={`shrink-0 rounded-full px-3 py-1 text-sm transition ${o.value === active ? "bg-accent text-white" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
+            className={`shrink-0 rounded-full px-3 py-1 text-sm transition ${o.value === active ? "bg-accent-fill text-white" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
           >
             {o.label}
           </Link>

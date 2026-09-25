@@ -17,7 +17,7 @@ export function Pagination({ basePath, page, totalPages }: { basePath: string; p
       ) : null}
       {window.map((p) =>
         p === page ? (
-          <span key={p} aria-current="page" className={`${cls} bg-accent text-white`}>
+          <span key={p} aria-current="page" className={`${cls} bg-accent-fill text-white`}>
             {p}
           </span>
         ) : (

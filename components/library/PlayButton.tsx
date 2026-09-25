@@ -11,7 +11,7 @@ import { playFragment } from "@/lib/domain/slug";
 export function PlayButton({ id, defaultSeason }: { id: number; defaultSeason: number | null }) {
   const history = useHistory();
   const h = history.find((x) => x.id === id);
-  const cls = "inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 font-semibold text-white shadow-lg shadow-accent/20 hover:brightness-110 sm:px-7";
+  const cls = "inline-flex h-11 items-center gap-2 rounded-full bg-accent-fill px-5 font-semibold text-white shadow-lg shadow-accent/20 hover:brightness-90 sm:px-7";
   if (h) {
     return (
       <a href={playFragment({ season: h.season, ep: h.ep + 1 })} className={cls}>
