@@ -90,6 +90,7 @@ async function traffic(token: string, zone: string, since: string, until: string
   const query = `query($z:String!,$s:Time!,$u:Time!){viewer{zones(filter:{zoneTag:$z}){
     status: httpRequestsAdaptiveGroups(limit:100,filter:{${window}},orderBy:[count_DESC]){count dimensions{edgeResponseStatus}}
     errors: httpRequestsAdaptiveGroups(limit:8,filter:{${window},edgeResponseStatus_geq:500},orderBy:[count_DESC]){count dimensions{clientRequestPath edgeResponseStatus}}
+    missing: httpRequestsAdaptiveGroups(limit:15,filter:{${window},edgeResponseStatus:404},orderBy:[count_DESC]){count dimensions{clientRequestPath}}
     ${CRAWLERS.map((c) => `${c.alias}: httpRequestsAdaptiveGroups(limit:30,filter:{${window},userAgent_like:"${c.like}"},orderBy:[count_DESC]){count dimensions{edgeResponseStatus}}`).join("\n    ")}
   }}}`;
   const data = await graphql<{ viewer: { zones: Record<string, Groups>[] } }>(token, query, { z: zone, s: since, u: until });
@@ -107,6 +108,11 @@ async function traffic(token: string, zone: string, since: string, until: string
     requests: total,
     errors5xx: errors,
     topErrors: z.errors.map((g) => ({ path: String(g.dimensions.clientRequestPath), status: Number(g.dimensions.edgeResponseStatus), count: g.count })),
+    // Old build assets disappear with every deploy; the rest may be broken internal links.
+    top404: z.missing
+      .map((g) => ({ path: String(g.dimensions.clientRequestPath), count: g.count }))
+      .filter((g) => !g.path.startsWith("/_next/"))
+      .slice(0, 8),
     crawlers,
   };
 }
@@ -334,6 +340,13 @@ async function bing(): Promise<Record<string, unknown> | null> {
 }
 
 const n = (x: number) => x.toLocaleString("en-US");
+const safeDecode = (path: string) => {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+};
 const PAGE_LABEL: Record<string, string> = {
   home: "首页", channel: "频道", title: "作品页", season: "分季页", person: "影人页", topic: "专题",
   schedule: "放送表", search: "搜索", me: "我的", info: "说明页", markdown: "Markdown 版", llms: "llms.txt", other: "其他",
@@ -408,6 +421,7 @@ async function main() {
           `  AI 智能体读取 Markdown / llms.txt：${people.agentReads.map((r) => `${r.key.replace(/^bot:/, "")} ${n(r.n)}`).join("，") || "暂无"}；身份不明的非浏览器访问 ${n(people.unknownViews)} 次`,
         ].join("\n"),
     `访问：${n(web.requests)} 次请求，5xx ${n(web.errors5xx)} 次（${pct(errorRate)}）${w ? `；Worker CPU 中位数 ${w.cpuMsP50}ms / P99 ${w.cpuMsP99}ms，总耗时中位数 ${w.wallMsP50}ms` : ""}`,
+    `最常被请求的 404：${web.top404.map((g) => `${safeDecode(g.path)} ×${g.count}`).join("，") || "无"}`,
     `爬虫：${web.crawlers.filter((c) => c.requests > 0).map((c) => `${c.label} ${n(c.requests)}${c.failed ? `（未成功 ${n(c.failed)}）` : ""}`).join("，") || "无"}`,
     `数据库：读取 ${n(platform.d1.rowsRead)} 行（${n(platform.d1.readQueries)} 次查询），写入 ${n(platform.d1.rowsWritten)} 行`,
     `  读取最多：${platform.queries.slice(0, 3).map((q) => `${n(q.rowsRead)} 行 / ${n(q.runs)} 次（平均 ${n(q.avgRows)}）${q.query.slice(0, 70)}`).join("\n            ")}`,
