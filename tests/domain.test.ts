@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { scoreMatch, type CandidateSignal, type SourceSignal } from "@/lib/domain/match";
 import { cleanDisplayName, normalizeKey, stripGluedYear } from "@/lib/domain/normalize";
 import { hasAdultSignal, isPublishableName } from "@/lib/domain/safety";
@@ -661,5 +661,40 @@ describe("title page titles", () => {
     expect(pageTitle(t("20260925期", "tv", "variety"))).toBe("繁花（2023） - 综艺在线观看");
     expect(pageTitle(t("HD", "movie", "movie"))).toBe("繁花（2023） - 电影在线观看");
     expect(pageTitle(t("全30集", "movie", "anime"))).toBe("繁花（2023） - 动漫在线观看");
+  });
+});
+
+describe("cache time limits", () => {
+  const never = () => new Promise<never>(() => {});
+
+  it("treat a cache read that takes too long as a miss, and a slow tag check as fresh", async () => {
+    const { withCacheTimeouts, withTagTimeouts } = await import("@/lib/edge/cache-timeouts");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const stuck = withCacheTimeouts({ name: "cf-r2-incremental-cache", get: never, set: never, delete: async () => {} }, "cache", { getMs: 20, setMs: 20 });
+    expect(stuck.name).toBe("cf-r2-incremental-cache");
+    expect(await stuck.get("page")).toBeNull();
+    await expect(stuck.set("page", {} as never)).resolves.toBeUndefined();
+    const entry = { value: { type: "app" }, lastModified: 1 };
+    const quick = withCacheTimeouts({ name: "x", get: async () => entry as never, set: async () => {}, delete: async () => {} }, "cache", { getMs: 20, setMs: 20 });
+    expect(await quick.get("page")).toBe(entry);
+
+    const tags = withTagTimeouts({ mode: "nextMode", name: "d1-next-mode-tag-cache", getLastRevalidated: never, hasBeenRevalidated: never, writeTags: async () => {}, isStale: never }, 20, 60_000);
+    expect(tags.name).toBe("d1-next-mode-tag-cache");
+    expect(await tags.hasBeenRevalidated(["title:1"], 1)).toBe(false);
+    // Paused after the timeout: answered at once, without waiting again.
+    const started = Date.now();
+    expect(await tags.isStale!(["title:1"], 1)).toBe(false);
+    expect(await tags.getLastRevalidated(["title:1"])).toBe(0);
+    expect(Date.now() - started).toBeLessThan(15);
+    expect(log.mock.calls.map((c) => JSON.parse(String(c[0])).slow)).toEqual(["cache-get", "cache-set", "tags-check"]);
+    log.mockRestore();
+  });
+
+  it("check tags normally while the database answers", async () => {
+    const { withTagTimeouts } = await import("@/lib/edge/cache-timeouts");
+    const tags = withTagTimeouts({ mode: "nextMode", name: "t", getLastRevalidated: async () => 5, hasBeenRevalidated: async () => true, writeTags: async () => {}, isStale: async () => true }, 20, 60_000);
+    expect(await tags.hasBeenRevalidated(["title:1"], 1)).toBe(true);
+    expect(await tags.isStale!(["title:1"], 1)).toBe(true);
+    expect(await tags.getLastRevalidated(["title:1"])).toBe(5);
   });
 });
