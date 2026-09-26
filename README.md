@@ -36,4 +36,21 @@ CMS 片源 ──> source_items ──> 匹配（豆瓣 ID > 库内别名精确�
 3. 执行 `gh secret set TMDB_API_KEY`。
 4. 执行 `gh variable set AUTOMATION_ENABLED --body true`。
 
-在 GitHub Actions 能用之前，可以用 `ops/` 里准备好的本机 launchd 定时任务代替（安装方法写在 plist 文件里）。
+在 GitHub Actions 能用之前，用 `ops/` 里的本机 launchd 定时任务代替（安装方法写在 plist 文件里），目前在运行的有：
+
+- `tv.kanpp.ingest`（每 4 小时）：入库、按片源资料建国产动漫和综艺条目、给开启了更新提醒的设备发新集通知（`scripts/push-updates.ts`）。
+- `tv.kanpp.health`（每天 09:10）：健康报告（`scripts/health.ts`），包括访客与来源、爬虫、数据库负载、SEO 检查、Bing、补片清单和版权通知；有问题时弹出系统通知，报告存在 `data/health/`。
+
+## 版权通知处理
+
+目标：收到通知后 24 小时内处理完毕并留下记录。有效版权通知的数量会被搜索引擎当作降权信号，也是托管方判断是否介入的依据。
+
+1. 通知发到 `dmca@kanpp.tv`，转发到站长邮箱。收到后先登记，登记时就开始计时：
+   `npx tsx scripts/takedown.ts record --sender "权利人（代理）" --received 2026-09-26T08:00Z --works "作品名" --url <本站网址> ...`
+2. 核对通知是否完整（作品、本站网址、联系方式、两项声明、签名，见 `/dmca`）。
+   - 完整：`npx tsx scripts/takedown.ts remove --notice <编号>`。作品改为下架状态（不删除数据），页面返回 404，移出站点地图和列表，同时通知边缘缓存和 IndexNow。
+   - 不完整或不属于本站：`npx tsx scripts/takedown.ts reject --notice <编号> --note "原因"`，并回信说明缺少什么。
+3. 回信告知处理结果。
+4. 如果收到反通知并决定恢复：`npx tsx scripts/takedown.ts restore --notice <编号> --note "原因"`，下一次入库时作品会重新上线。
+
+`npx tsx scripts/takedown.ts list` 可以查看全部通知和处理用时。健康报告会列出近 30 天的通知，超过 24 小时未处理的会报警。

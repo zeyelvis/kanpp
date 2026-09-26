@@ -200,7 +200,11 @@ async function visitors(token: string) {
 
 async function catalog() {
   const db = openDb(parseDbTarget(args.db));
-  const [search, counts, published, updates, playback, sources] = await Promise.all([
+  const [notices, search, counts, published, updates, playback, sources] = await Promise.all([
+    db.all<{ id: number; sender: string; received_at: string; status: string; handled_at: string | null }>(
+      `SELECT id, sender, received_at, status, handled_at FROM copyright_notices
+       WHERE status = 'open' OR received_at >= datetime('now', '-30 days') ORDER BY id DESC`,
+    ),
     searchGaps(db),
     db.all<{ key: string; value: string }>("SELECT key, value FROM sync_state WHERE key IN ('count:all', 'count:people')"),
     db.first<{ n: number }>("SELECT COUNT(*) AS n FROM titles WHERE published_at >= datetime('now', '-1 day')"),
@@ -218,7 +222,15 @@ async function catalog() {
   const value = (k: string) => Number(counts.find((c) => c.key === k)?.value ?? 0);
   const ok = playback?.ok ?? 0;
   const fail = playback?.fail ?? 0;
+  const hours = (from: string, to: string | null) => (Date.parse(`${(to ?? new Date().toISOString().slice(0, 19)).replace(" ", "T")}Z`) - Date.parse(`${from.replace(" ", "T")}Z`)) / 3600_000;
+  const handled = notices.filter((x) => x.handled_at);
   return {
+    copyright: {
+      last30d: notices.length,
+      handled: handled.length,
+      avgHandlingHours: handled.length ? Math.round(handled.reduce((t, x) => t + hours(x.received_at, x.handled_at), 0) / handled.length) : null,
+      open: notices.filter((x) => x.status === "open").map((x) => ({ id: x.id, sender: x.sender, hoursOpen: Math.round(hours(x.received_at, null)) })),
+    },
     search,
     indexableTitles: value("count:all"),
     people: value("count:people"),
@@ -355,6 +367,9 @@ async function main() {
       alerts.push(`${c.label} 的请求有 ${pct(c.failed / c.requests)} 未成功（共 ${n(c.requests)} 次，其中 404 ${n(c.notFound)} 次）`);
     }
   }
+  for (const o of cat.copyright.open) {
+    if (o.hoursOpen >= 24) alerts.push(`版权通知 #${o.id}（${o.sender}）已等待 ${o.hoursOpen} 小时未处理：npx tsx scripts/takedown.ts list`);
+  }
   if (seo && !seo.passed) alerts.push(`SEO 巡检未通过：${seo.summary.split("\n").slice(-3).join(" / ")}`);
 
   const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, visitors: people, web, platform, catalog: cat, seo, bing: bingStats };
@@ -385,6 +400,7 @@ async function main() {
     `  读取最多：${platform.queries.slice(0, 3).map((q) => `${n(q.rowsRead)} 行 / ${n(q.runs)} 次（平均 ${n(q.avgRows)}）${q.query.slice(0, 70)}`).join("\n            ")}`,
     `片库：可收录 ${n(cat.indexableTitles)} 部，影人 ${n(cat.people)} 位；近 24 小时新上线 ${n(cat.publishedLast24h)} 部，${n(cat.titlesUpdatedLast24h)} 部有新集数`,
     `播放（昨天）：${n(cat.playbackYesterday.loads)} 次，成功率 ${pct(cat.playbackYesterday.successRate)}${cat.playbackYesterday.avgFirstFrameMs ? `，首帧平均 ${n(cat.playbackYesterday.avgFirstFrameMs)}ms` : ""}`,
+    `版权通知（近 30 天）：${cat.copyright.last30d} 件，已处理 ${cat.copyright.handled} 件${cat.copyright.avgHandlingHours != null ? `，平均 ${cat.copyright.avgHandlingHours} 小时` : ""}${cat.copyright.open.length ? `；待处理 ${cat.copyright.open.map((o) => `#${o.id} 已 ${o.hoursOpen} 小时`).join("、")}` : ""}`,
     `搜索（近 7 天）：${n(cat.search.searches)} 次，没结果 ${n(cat.search.misses)} 次${cat.search.gaps.length ? `；补片清单：\n${cat.search.gaps.slice(0, 10).map((g) => `  - 「${g.term}」${g.searches} 次：${g.finding}`).join("\n")}` : ""}`,
     seo ? `SEO 巡检：${seo.passed ? "通过" : "未通过"}（${seo.summary.split("\n").at(-1)}）` : "SEO 巡检：跳过",
     bingStats ? `Bing：已收录 ${bingStats.inIndex}，近 7 天抓取 ${bingStats.crawledPagesLast7d} 页，展示 ${bingStats.impressionsLast7d}，点击 ${bingStats.clicksLast7d}` : "Bing：读取失败",
