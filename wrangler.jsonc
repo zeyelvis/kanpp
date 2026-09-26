@@ -8,6 +8,10 @@
   // Only the real domains serve the site: a *.workers.dev copy would be duplicate content.
   "workers_dev": false,
   "preview_urls": false,
+  // D1 and R2 are in APAC while Googlebot crawls from US colos, where a cold page's several
+  // D1/R2 round trips each cross the Pacific (p50 0.4-2.6 s vs ~0.1 s in Asia, Sep 2026).
+  // Smart Placement runs such requests next to the data instead.
+  "placement": { "mode": "smart" },
   "routes": [
     { "pattern": "kanpp.tv", "custom_domain": true },
     { "pattern": "www.kanpp.tv", "custom_domain": true }
