@@ -1,4 +1,4 @@
-import { latestEpisodeNumber } from "./labels";
+import { FINISHED_LABEL, latestEpisodeNumber } from "./labels";
 
 /** A title_updates row: the label the sources showed, and when. */
 export interface UpdateRow {
@@ -16,7 +16,7 @@ export interface UpdateEntry {
   episode: number | null;
 }
 
-const FINISHED = /完结|全集|全\d+集|\d+集全/;
+const FINISHED = FINISHED_LABEL;
 
 /** Beijing-time date of a row: the source's time when it has one, else when we saw it. */
 function rowDate(r: UpdateRow): string {

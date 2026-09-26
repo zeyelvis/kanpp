@@ -22,7 +22,7 @@ CMS 片源 ──> source_items ──> 匹配（豆瓣 ID > 库内别名精确�
 | `npm run ingest -- --db=remote --hours=5 --backfill=5 --refresh-series=300` | 生产环境的定时入库（与 GitHub Actions 相同） |
 | `npm run seo:check -- --base=https://kanpp.tv --sample=200` | 线上 SEO 检查：状态码、canonical、标题唯一、h1、JSON-LD、跳转 |
 | `npm run db:migrate:remote` | 执行 D1 表结构迁移 |
-| `npm run deploy` | 构建并部署到 Cloudflare |
+| `npm run deploy` | 构建并部署到 Cloudflare，最后按顺序预热首页、频道、站点地图和专题页（每次部署都会清空页面缓存） |
 
 ## 自动化（GitHub Actions）
 
@@ -72,3 +72,11 @@ CMS 片源 ──> source_items ──> 匹配（豆瓣 ID > 库内别名精确�
 4. 如果收到反通知并决定恢复：`npx tsx scripts/takedown.ts restore --notice <编号> --note "原因"`，下一次入库时作品会重新上线。
 
 `npx tsx scripts/takedown.ts list` 可以查看全部通知和处理用时。健康报告会列出近 30 天的通知，超过 24 小时未处理的会报警。
+
+## 页面缓存
+
+- 整页缓存（ISR）和少量共享数据存放在 R2 存储桶 `kanpp-next-cache`（亚太区），前面还有一层按区域的 Cache API。
+- 作品页和影人页上的数据直接查 D1，不经过数据缓存：一次缓存未命中（读 R2、查标签、写 R2）要 500–900 毫秒，直接查询约 50 毫秒。
+- 作品页只挂 `title:{id}` 一个标签，入库只刷新改动过的作品；`slugs` 标签只用于缓存的 404 页面。说明见 `lib/data/cache.ts`。
+- 存储桶的生命周期规则 `expire-old-cache` 会删除 14 天没有更新过的对象，也就是旧版本部署留下的缓存；当前版本里被删掉的页面，下次访问时会重新生成。
+

@@ -1,7 +1,7 @@
 import { absoluteUrl, site } from "@/lib/config/site";
 import type { Season, TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
-import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
+import { countryLabel, episodeProgress, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { seasonPath, titlePath } from "@/lib/domain/slug";
 import { tmdbImageUrl } from "@/lib/images";
 import { lastModified } from "@/lib/seo/sitemap";
@@ -11,8 +11,19 @@ function clip(text: string, max: number): string {
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
-export function pageTitle(t: TitleDetail): string {
-  return `${t.name}${t.year ? `（${t.year}）` : ""} - ${KIND_LABEL[t.kind]}在线观看`;
+/**
+ * "繁花（2023）全30集在线观看 - 电视剧" / "某剧（2026）更新至第12集在线观看 - 电视剧": series
+ * carry their real progress (people search "…全集", "…更新到第几集"); films and titles
+ * without a readable label keep "… - 电影在线观看".
+ */
+export function pageTitle(t: Pick<TitleDetail, "name" | "year" | "kind" | "tmdb_type" | "latest_label">): string {
+  const name = `${t.name}${t.year ? `（${t.year}）` : ""}`;
+  if (t.tmdb_type === "tv") {
+    const { finished, episodes } = episodeProgress(t.latest_label);
+    if (finished) return `${name}${episodes ? `全${episodes}集` : "全集"}在线观看 - ${KIND_LABEL[t.kind]}`;
+    if (episodes) return `${name}更新至第${episodes}集在线观看 - ${KIND_LABEL[t.kind]}`;
+  }
+  return `${name} - ${KIND_LABEL[t.kind]}在线观看`;
 }
 
 /**

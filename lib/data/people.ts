@@ -106,14 +106,15 @@ export interface PersonNetwork {
  */
 export async function personNetwork(personId: number, titleIds: number[], limit = 12): Promise<PersonNetwork> {
   const db = await getDb();
-  const rows: { id: number; cast_json: string; crew_json: string }[] = [];
-  for (let i = 0; i < titleIds.length; i += 90) {
-    const chunk = titleIds.slice(i, i + 90);
-    rows.push(...(await db.all<{ id: number; cast_json: string; crew_json: string }>(
-      `SELECT id, cast_json, crew_json FROM titles WHERE id IN (${chunk.map(() => "?").join(",")})`,
-      chunk,
-    )));
-  }
+  // At most 100 bound parameters per D1 query: chunks of 90, fetched together.
+  const chunks = Array.from({ length: Math.ceil(titleIds.length / 90) }, (_, i) => titleIds.slice(i * 90, i * 90 + 90));
+  const rows = (
+    await Promise.all(
+      chunks.map((chunk) =>
+        db.all<{ id: number; cast_json: string; crew_json: string }>(`SELECT id, cast_json, crew_json FROM titles WHERE id IN (${chunk.map(() => "?").join(",")})`, chunk),
+      ),
+    )
+  ).flat();
   const billing: Record<number, number> = {};
   const tally = new Map<number, { name: string; profile: string | null; titles: number; roles: Map<string, number> }>();
   for (const row of rows) {

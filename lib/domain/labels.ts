@@ -37,6 +37,14 @@ export function latestEpisodeNumber(label: string | null | undefined): number | 
   return m ? Number(m[1]) : null;
 }
 
+/** Source labels that say a series is complete: "完结", "全40集", "40集全", "第10集完结". */
+export const FINISHED_LABEL = /完结|全集|全\d+集|\d+集全/;
+
+/** How far a series is, from its source label: finished or not, and the episode number. */
+export function episodeProgress(label: string | null | undefined): { finished: boolean; episodes: number | null } {
+  return { finished: Boolean(label && FINISHED_LABEL.test(label)), episodes: latestEpisodeNumber(label) };
+}
+
 /**
  * TMDB's "next episode" lags behind the sources. Show it only if it is still ahead of what
  * the sources already carry and not in the past.
@@ -47,7 +55,7 @@ export function isNextEpisodeAhead(
 ): boolean {
   if (!t.next_episode_date || t.next_episode_date < today) return false;
   // Sources already call it finished ("完结", "全40集", "40集全"): nothing is upcoming.
-  if (t.latest_label && /完结|全集|全\d+集|\d+集全/.test(t.latest_label)) return false;
+  if (t.latest_label && FINISHED_LABEL.test(t.latest_label)) return false;
   const have = latestEpisodeNumber(t.latest_label);
   return !(have != null && t.next_episode_number != null && t.next_episode_number <= have);
 }

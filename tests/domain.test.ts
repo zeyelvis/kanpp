@@ -620,3 +620,18 @@ describe("douban match guard", () => {
     expect(matchConflict({ name: "龙珠Z剧场版2", film: true, year: 1990, keys: new Set(["龙珠z剧场版2世界最强的高手"]) }, row("龙珠Z剧场版16", "anime", 1996, 1, ["龙珠z剧场版16冥界超激战"]))).toBe("name-and-year-differ(1996/1990)");
   });
 });
+
+describe("title page titles", () => {
+  const t = (latest_label: string | null, tmdb_type: "tv" | "movie" = "tv", kind = "tv") =>
+    ({ name: "繁花", year: 2023, kind, tmdb_type, latest_label }) as Parameters<typeof import("@/lib/seo/title").pageTitle>[0];
+  it("puts a series' real progress in the title", async () => {
+    const { pageTitle } = await import("@/lib/seo/title");
+    expect(pageTitle(t("全30集"))).toBe("繁花（2023）全30集在线观看 - 电视剧");
+    expect(pageTitle(t("第10集完结"))).toBe("繁花（2023）全10集在线观看 - 电视剧");
+    expect(pageTitle(t("完结"))).toBe("繁花（2023）全集在线观看 - 电视剧");
+    expect(pageTitle(t("更新至12集"))).toBe("繁花（2023）更新至第12集在线观看 - 电视剧");
+    expect(pageTitle(t("20260925期", "tv", "variety"))).toBe("繁花（2023） - 综艺在线观看");
+    expect(pageTitle(t("HD", "movie", "movie"))).toBe("繁花（2023） - 电影在线观看");
+    expect(pageTitle(t("全30集", "movie", "anime"))).toBe("繁花（2023） - 动漫在线观看");
+  });
+});

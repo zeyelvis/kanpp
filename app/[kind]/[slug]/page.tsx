@@ -13,7 +13,7 @@ import { topicsForTitle } from "@/lib/domain/topics";
 import { updateCadence, updateTimeline } from "@/lib/domain/updates";
 import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
-import { castOtherWorks, personSlugs } from "@/lib/data/people";
+import { castOtherWorks, personCredits, personSlugs } from "@/lib/data/people";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
 import { getLines, getSeasons, getUpdates, relatedTitles, tagTitle, type Line, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
@@ -123,6 +123,9 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
     getUpdates(t.id),
     // The page's only tag: an ingest run that changes this title refreshes it.
     tagTitle(t.id),
+    // Prefetch the leads' credits alongside (request-cached): castOtherWorks needs them once
+    // personSlugs has said which leads have pages.
+    Promise.all(t.cast.filter((c) => c.id != null).slice(0, 5).map((c) => personCredits(c.id!))),
   ]);
   // One entry is only the state when recording began; a history needs a change after it.
   const timeline = updateTimeline(updates);
