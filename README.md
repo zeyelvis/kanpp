@@ -56,7 +56,7 @@ CMS 片源 ──> source_items ──> 匹配（豆瓣 ID > 库内别名精确�
 
 `ops/` 里的 plist 文件写有安装方法。
 
-- `tv.kanpp.health`（每天 09:10）：健康报告（`scripts/health.ts`），包括访客与来源、爬虫、入库任务、数据库负载、SEO 检查、Bing、补片清单和版权通知。有问题时弹出系统通知，报告存在 `data/health/`。
+- `tv.kanpp.health`（每天 09:10）：向 Bing 提交当天配额内最重要的网址（`scripts/bing-submit.ts`，顺序是首页和频道、专题、最热门的作品），以及健康报告（`scripts/health.ts`），包括访客与来源、爬虫、入库任务、数据库负载、SEO 检查、Bing、补片清单和版权通知。有问题时弹出系统通知，报告存在 `data/health/`。
 - `tv.kanpp.ingest`：原来的本机入库任务，2026-09-26 起停用（`launchctl unload -w`）。云端出问题时可以临时恢复：`launchctl load -w ~/Library/LaunchAgents/tv.kanpp.ingest.plist`。它和云端任务共用数据库租约，不会同时写库。
 
 ## 版权通知处理
