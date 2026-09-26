@@ -17,7 +17,8 @@ export async function generateStaticParams() {
 }
 
 function parseSeason(segment: string): number | null {
-  const m = segment.match(/^s([1-9]\d?)$/);
+  // Up to four digits: some shows number their seasons by year (美之壶 s2006).
+  const m = segment.match(/^s([1-9]\d{0,3})$/);
   return m ? Number(m[1]) : null;
 }
 

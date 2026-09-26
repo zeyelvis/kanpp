@@ -9,6 +9,7 @@ import { refreshTitles, storeCatalogCounts } from "./publish";
 import { refreshAiringSeries } from "./refresh";
 import { Resolver } from "./resolve";
 import { upsertSourceRows } from "./source-rows";
+import { storeTopicCounts } from "./topic-counts";
 
 /**
  * What a catalog job needs from where it runs: the database, a log, and how to reach the live
@@ -132,6 +133,7 @@ export async function runIngest(ctx: JobContext, tmdb: TmdbClient | null, opts: 
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   summary.published = { refreshed: published.refreshed, changed: published.changed.length };
   log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
+  log(`topic counts: ${await storeTopicCounts(db)} topics`);
   const people = await refreshPeople(db);
   log(`people: ${JSON.stringify({ ...people, published: people.published.length })}`);
   // New person slugs may have been cached as 404s, like new titles.

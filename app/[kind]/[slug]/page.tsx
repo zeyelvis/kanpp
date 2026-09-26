@@ -187,7 +187,8 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
               选集{seasonName && seasons.length > 1 ? ` · ${seasonName}` : ""}
               <span className="ml-2 text-sm font-normal text-muted">共{episodeLine.episodes.length}集</span>
             </h2>
-            {seasons.length > 1 && latestSeason ? (
+            {/* Sources can carry a season TMDB does not list: only link seasons that have a page. */}
+            {seasons.length > 1 && latestSeason && seasons.some((s) => s.season_number === latestSeason) ? (
               <Link href={seasonPath(t.kind, t.slug, latestSeason)} className="shrink-0 text-sm text-muted hover:text-accent">
                 本季详情 ›
               </Link>
