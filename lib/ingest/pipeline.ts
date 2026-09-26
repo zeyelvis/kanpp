@@ -3,7 +3,7 @@ import { personPath } from "@/lib/domain/slug";
 import { fetchCmsPage } from "@/lib/sources/cms";
 import { SOURCES, type CmsSource } from "@/lib/sources/registry";
 import type { TmdbClient } from "@/lib/tmdb/client";
-import { titlePaths, type RevalidatePayload } from "./notify";
+import { submitQueued, titlePaths, type RevalidatePayload } from "./notify";
 import { refreshPeople } from "./people";
 import { refreshTitles, storeCatalogCounts } from "./publish";
 import { refreshAiringSeries } from "./refresh";
@@ -139,7 +139,7 @@ export async function runIngest(ctx: JobContext, tmdb: TmdbClient | null, opts: 
 
   if (ctx.announce) {
     summary.revalidate = await ctx.notifySite({ titleIds: [...touched], created, catalog: true });
-    summary.indexnow = await ctx.submitIndexNow([...people.published.map(personPath), ...(await titlePaths(db, published.changed))]);
+    summary.indexnow = await submitQueued(db, ctx.submitIndexNow, [...people.published.map(personPath), ...(await titlePaths(db, published.changed))]);
     log(`revalidate: ${summary.revalidate}`);
     log(`indexnow: ${summary.indexnow}`);
   }

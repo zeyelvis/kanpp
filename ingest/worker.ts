@@ -17,6 +17,7 @@
  */
 import { site } from "../lib/config/site";
 import { d1Db, type D1DatabaseLike } from "../lib/db/d1";
+import { retryingDb } from "../lib/db/retry";
 import { VAPID_PUBLIC_KEY } from "../lib/domain/push";
 import { withLease } from "../lib/ingest/lease";
 import { siteNotifier } from "../lib/ingest/notify";
@@ -65,7 +66,8 @@ const SCHEDULE: Record<string, JobName> = {
 const TMDB_CONCURRENCY = 6;
 
 async function runJob(env: Env, job: JobName, log: (...parts: unknown[]) => void, opts: RunOptions = {}) {
-  const db = d1Db(env.DB);
+  // D1 occasionally drops a connection mid-job ("Network connection lost"): retry those.
+  const db = retryingDb(d1Db(env.DB));
   const ctx: JobContext = {
     db,
     log,

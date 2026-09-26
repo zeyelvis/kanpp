@@ -2,7 +2,7 @@ import type { Db } from "@/lib/db/types";
 import type { Kind } from "@/lib/domain/kinds";
 import { scoreMatch, type CandidateSignal, type MatchResult, type SourceSignal } from "@/lib/domain/match";
 import { cleanDisplayName, normalizeKey, splitPeople, stripGluedYear } from "@/lib/domain/normalize";
-import { matchConflict } from "@/lib/domain/match-guard";
+import { matchConflict, MAX_FILM_EPISODES } from "@/lib/domain/match-guard";
 import { hasAdultSignal, isCommentary } from "@/lib/domain/safety";
 import { extractSeason, trailingSeason } from "@/lib/domain/season";
 import { classifyCategory } from "@/lib/sources/categories";
@@ -112,8 +112,11 @@ export class Resolver {
   }
 
   async resolveRow(row: PendingRow): Promise<Outcome & { created?: boolean }> {
-    const category = classifyCategory(row.type_name, row.vod_name);
+    let category = classifyCategory(row.type_name, row.vod_name);
     if (!category) return { status: "rejected", note: "category" };
+    // A "film" category with dozens of episodes is a series filed under the wrong category
+    // (长安的荔枝, 37 episodes under 喜剧片): match it as one.
+    if (category.tmdbType === "movie" && (row.episode_count ?? 0) > MAX_FILM_EPISODES) category = { kind: "tv", tmdbType: "tv" };
     if (hasAdultSignal(row.vod_name) || isCommentary(row.vod_name)) return { status: "rejected", note: "name-policy" };
     const { signal, base } = sourceSignal(row, category);
     if (signal.keys.length === 0) return { status: "unmatched", note: "empty-name" };
@@ -156,6 +159,8 @@ export class Resolver {
       const cand = await candidateFromDb(this.db, title_id);
       if (!cand) continue;
       const result = scoreMatch(signal, cand);
+      // A film under the same name is not this row when the row cannot be that film.
+      if (result.decision === "same" && cand.tmdbType === "movie" && (await this.doubanConflict(title_id, row, category, signal))) continue;
       if (!best || result.score > best.result.score) best = { titleId: title_id, result };
     }
     if (best?.result.decision === "same") {
@@ -197,12 +202,16 @@ export class Resolver {
     return { status: "unmatched", score: reviewCand?.r.score, note: reviewCand ? `${reviewCand.note} ${reviewCand.r.reasons.join(" ")}` : `no-tmdb-hit q=${base}` };
   }
 
+  /** Why the row cannot belong to the title (lib/domain/match-guard.ts), used for douban and local matches. */
   private async doubanConflict(titleId: number, row: PendingRow, category: { kind: Kind }, signal: SourceSignal): Promise<string | null> {
-    const t = await this.db.first<{ name: string; tmdb_type: TmdbType; year: number | null }>("SELECT name, tmdb_type, year FROM titles WHERE id = ?", [titleId]);
+    const t = await this.db.first<{ name: string; tmdb_type: TmdbType; year: number | null; genres: string }>(
+      "SELECT name, tmdb_type, year, genres FROM titles WHERE id = ?",
+      [titleId],
+    );
     if (!t) return "no-title";
     const aliases = await this.db.all<{ norm: string }>("SELECT norm FROM aliases WHERE title_id = ?", [titleId]);
     return matchConflict(
-      { name: t.name, film: t.tmdb_type === "movie", year: t.year, keys: new Set(aliases.map((a) => a.norm)) },
+      { name: t.name, film: t.tmdb_type === "movie", documentary: t.genres.includes("纪录"), year: t.year, keys: new Set(aliases.map((a) => a.norm)) },
       { kind: category.kind, name: row.vod_name, keys: signal.keys, year: row.vod_year, episodes: row.episode_count },
     );
   }

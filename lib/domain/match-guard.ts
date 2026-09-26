@@ -5,6 +5,8 @@
  */
 export interface GuardTitle {
   name: string;
+  /** A documentary film (genre 纪录): making-of material may be the film itself (不破不立). */
+  documentary?: boolean;
   /** A film (TMDB movie, including animated films). Series seasons legitimately carry other
    * years and numbered names ("种地吧4", 2026 on a 2023 show), so only films are checked. */
   film: boolean;
@@ -45,7 +47,7 @@ export function matchConflict(title: GuardTitle, row: GuardRow): string | null {
       (glued != null && k.endsWith(glued) && title.keys.has(k.slice(0, -glued.length))),
   );
   if ((row.episodes ?? 0) > MAX_FILM_EPISODES) return `film-with-${row.episodes}-episodes`;
-  if (DERIVATIVE.test(row.name) && !DERIVATIVE.test(title.name)) return "derivative-of-film";
+  if (DERIVATIVE.test(row.name) && !DERIVATIVE.test(title.name) && !title.documentary) return "derivative-of-film";
   if ((row.kind === "tv" || row.kind === "variety") && !sameName) return "series-row-on-film";
   if (!sameName && row.year != null && title.year != null && Math.abs(row.year - title.year) > 2) return `name-and-year-differ(${row.year}/${title.year})`;
   return null;

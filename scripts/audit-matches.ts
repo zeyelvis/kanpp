@@ -10,6 +10,8 @@
 import { parseArgs } from "node:util";
 import type { Kind } from "@/lib/domain/kinds";
 import { matchConflict } from "@/lib/domain/match-guard";
+import type { Db } from "@/lib/db/types";
+import { withLease } from "@/lib/ingest/lease";
 import { refreshTitles } from "@/lib/ingest/publish";
 import { sourceSignal } from "@/lib/ingest/resolve";
 import { classifyCategory } from "@/lib/sources/categories";
@@ -32,6 +34,7 @@ interface Row {
   title_id: number;
   kind: Kind;
   tmdb_type: string;
+  genres: string;
   year: number | null;
   name: string;
   indexable: number;
@@ -45,7 +48,7 @@ async function main() {
   for (let from = 0; from < max; from += STEP) {
     const rows = await db.all<Row>(
       `SELECT s.source_id, s.vod_id, s.vod_name, s.vod_year, s.type_name, s.episode_count, s.match_note, s.title_id,
-              t.kind, t.tmdb_type, t.year, t.name, t.indexable
+              t.kind, t.tmdb_type, t.genres, t.year, t.name, t.indexable
        FROM source_items s JOIN titles t ON t.id = s.title_id
        WHERE s.title_id > ? AND s.title_id <= ? AND s.match_status = 'matched'`,
       [from, from + STEP],
@@ -58,7 +61,7 @@ async function main() {
       if (!category) continue;
       const { signal } = sourceSignal({ ...r, douban_id: null, actor: null, director: null }, category);
       const reason = matchConflict(
-        { name: r.name, film: r.tmdb_type === "movie", year: r.year, keys: keys.get(r.title_id) ?? new Set() },
+        { name: r.name, film: r.tmdb_type === "movie", documentary: r.genres.includes("纪录"), year: r.year, keys: keys.get(r.title_id) ?? new Set() },
         { kind: category.kind, name: r.vod_name, keys: signal.keys, year: r.vod_year, episodes: r.episode_count },
       );
       if (reason) found.push({ ...r, reason });
@@ -74,7 +77,12 @@ async function main() {
     console.log(`  #${r.title_id} ${r.name} (${r.kind} ${r.year}) <- ${r.source_id} ${r.vod_name} ${r.vod_year} ${r.type_name} ${r.episode_count}集 [${r.reason}] ${r.match_note ?? ""}`);
   }
   if (!args.apply || found.length === 0) return;
+  // Writes go through the catalog lease, like every other job (lib/ingest/lease.ts).
+  const done = target === "remote" ? await withLease(db, `script:audit:${process.pid}`, 30, () => apply(db, target, found, titles)) : await apply(db, target, found, titles);
+  if (done === null) throw new Error("another catalog job holds the lease, or a mirror is checked out: try later");
+}
 
+async function apply(db: Db, target: string, found: { source_id: string; vod_id: string; reason: string; title_id: number }[], titles: Set<number>) {
   for (let i = 0; i < found.length; i += 50) {
     await db.batch(
       found.slice(i, i + 50).map((r) => ({

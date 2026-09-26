@@ -170,6 +170,17 @@ describe("resolver: trailing number as season", () => {
     expect(await resolver.resolveRow(same)).toMatchObject({ status: "matched", titleId: film, note: "douban" });
   });
 
+  it("does not attach a series filed under a film category to the film of the same name", async () => {
+    const db = freshDb();
+    const { lastRowId: film } = await db.run("INSERT INTO titles (kind, name, year, tmdb_type, tmdb_id) VALUES ('movie', '长安的荔枝', 2025, 'movie', 77)");
+    await db.run("INSERT INTO aliases (title_id, norm, alias) VALUES (?, '长安的荔枝', '长安的荔枝')", [film]);
+    const resolver = new Resolver(db, noTmdb);
+    const series = { ...row("长安的荔枝", 2025), type_name: "喜剧片", episode_count: 37 };
+    expect(await resolver.resolveRow(series)).not.toMatchObject({ status: "matched", titleId: film });
+    const theFilm = { ...row("长安的荔枝", 2025), type_name: "喜剧片", episode_count: 1 };
+    expect(await resolver.resolveRow(theFilm)).toMatchObject({ status: "matched", titleId: film });
+  });
+
   it("prefers a work whose name really ends in the number", async () => {
     const db = freshDb();
     await series(db, "中国奇谭", [[1, "2023-01-01"], [2, "2026-01-01"]]);
@@ -242,5 +253,33 @@ describe("catalog lease", () => {
     expect(await withLease(db, b, 20, async () => "ran")).toBe("ran");
     await db.run("INSERT INTO sync_state (key, value) VALUES ('mirror:checkout', '2026-09-26T08:00:00Z')");
     expect(await withLease(db, a, 20, async () => "ran")).toBeNull();
+  });
+});
+
+describe("IndexNow queue", () => {
+  it("keeps paths the endpoint refused and sends them with the next run", async () => {
+    const { submitQueued } = await import("@/lib/ingest/notify");
+    const db = freshDb();
+    const sent: string[][] = [];
+    const refuse = async (paths: string[]) => (sent.push(paths), `${paths.length} urls: 429`);
+    const accept = async (paths: string[]) => (sent.push(paths), `${paths.length} urls: 200`);
+    expect(await submitQueued(db, refuse, ["/a", "/b"])).toBe("2 urls: 429 (2 kept for the next run)");
+    expect(await submitQueued(db, accept, ["/b", "/c"])).toBe("3 urls: 200");
+    expect(sent[1]).toEqual(["/a", "/b", "/c"]);
+    expect(await submitQueued(db, accept, [])).toBe("nothing to submit");
+  });
+});
+
+describe("D1 retries", () => {
+  it("retries transient errors only", async () => {
+    const { retryingDb } = await import("@/lib/db/retry");
+    let calls = 0;
+    const flaky = { all: async () => (++calls < 2 ? Promise.reject(new Error("D1_ERROR: Network connection lost.")) : [{ ok: 1 }]) } as never;
+    expect(await retryingDb(flaky).all("SELECT 1")).toEqual([{ ok: 1 }]);
+    expect(calls).toBe(2);
+    let sqlCalls = 0;
+    const broken = { run: async () => (sqlCalls++, Promise.reject(new Error("D1_ERROR: no such table: x"))) } as never;
+    await expect(retryingDb(broken).run("SELECT * FROM x")).rejects.toThrow("no such table");
+    expect(sqlCalls).toBe(1);
   });
 });

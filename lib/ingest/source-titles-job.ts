@@ -3,6 +3,7 @@ import type { Kind } from "@/lib/domain/kinds";
 import { slugCandidates, titlePath } from "@/lib/domain/slug";
 import { cleanContent, fetchCmsByIds } from "@/lib/sources/cms";
 import { getSource } from "@/lib/sources/registry";
+import { submitQueued } from "./notify";
 import type { JobContext } from "./pipeline";
 import { refreshTitles, storeCatalogCounts } from "./publish";
 import { groupSourceRows, planSourceTitle, SOURCE_TITLE_TYPES, type SourceRow, type SourceTitlePlan } from "./source-titles";
@@ -202,7 +203,7 @@ async function write(ctx: JobContext, fresh: SourceTitlePlan[], attach: { titleI
   if (!ctx.announce) return { created: created.length, attached: attach.length, broken: 0 };
 
   log(`revalidate: ${await ctx.notifySite({ titleIds: [...new Set(attach.map((a) => a.titleId))], created: created.length > 0, catalog: true })}`);
-  log(`indexnow: ${await ctx.submitIndexNow(created.map((c) => titlePath(c.kind, c.slug)))}`);
+  log(`indexnow: ${await submitQueued(db, ctx.submitIndexNow, created.map((c) => titlePath(c.kind, c.slug)))}`);
   // Pull each new poster through our image route once, so it is in R2 before visitors ask.
   // A poster the source host no longer serves would show as a broken image: such titles
   // leave the index (a retry absorbs one-off network errors).

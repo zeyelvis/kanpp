@@ -614,6 +614,8 @@ describe("douban match guard", () => {
     expect(matchConflict(film, row("女人我最大2020", "variety", 2020, 254, ["女人我最大2020", "女人我最大"]))).toBe("film-with-254-episodes");
     expect(matchConflict({ name: "母亲", film: true, year: 2009, keys: new Set(["母亲"]) }, row("母亲", "tv", 2009, 11))).toBe("film-with-11-episodes");
     expect(matchConflict({ name: "误杀2", film: true, year: 2021, keys: new Set(["误杀2"]) }, row("误杀2 独家幕后记录", "doc", 2021, 1, ["误杀2独家幕后记录"]))).toBe("derivative-of-film");
+    // Unless the title is itself the making-of documentary.
+    expect(matchConflict({ name: "不破不立", film: true, documentary: true, year: 2025, keys: new Set(["不破不立"]) }, row("不破不立——哪吒之魔童闹海幕后纪录片", "anime", 2025, 1, ["不破不立哪吒之魔童闹海幕后纪录片"]))).toBeNull();
     expect(matchConflict(film, row("别的剧", "tv", 2025, 3))).toBe("series-row-on-film");
     expect(matchConflict({ name: "龙珠Z剧场版2", film: true, year: 1990, keys: new Set(["龙珠z剧场版2世界最强的高手"]) }, row("龙珠Z剧场版16", "anime", 1996, 1, ["龙珠z剧场版16冥界超激战"]))).toBe("name-and-year-differ(1996/1990)");
   });

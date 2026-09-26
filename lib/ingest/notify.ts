@@ -49,3 +49,25 @@ export async function titlePaths(db: Db, titleIds: number[]): Promise<string[]> 
   }
   return paths;
 }
+
+const INDEXNOW_QUEUE = "indexnow:queue";
+const MAX_QUEUED = 10_000;
+
+/**
+ * Submits paths to IndexNow together with any an earlier run could not deliver (the endpoint
+ * answers 429 when it has had enough for a while); undelivered paths wait in sync_state for
+ * the next run.
+ */
+export async function submitQueued(db: Db, submit: (paths: string[]) => Promise<string>, paths: string[]): Promise<string> {
+  const queued = JSON.parse((await db.first<{ value: string }>("SELECT value FROM sync_state WHERE key = ?", [INDEXNOW_QUEUE]))?.value || "[]") as string[];
+  const all = [...new Set([...queued, ...paths])].slice(-MAX_QUEUED);
+  if (all.length === 0) return "nothing to submit";
+  const result = await submit(all);
+  // "N urls: 200,202" when every batch was accepted; "skipped (...)" off production.
+  const delivered = /^skipped/.test(result) || /: (2\d\d,?)+$/.test(result);
+  await db.run(
+    "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+    [INDEXNOW_QUEUE, delivered ? "" : JSON.stringify(all)],
+  );
+  return delivered ? result : `${result} (${all.length} kept for the next run)`;
+}
