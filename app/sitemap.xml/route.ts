@@ -1,13 +1,14 @@
 import { absoluteUrl } from "@/lib/config/site";
 import { countPeople } from "@/lib/data/people";
-import { countIndexable } from "@/lib/data/titles";
+import { maxTitleId } from "@/lib/data/titles";
 import { sitemapIndex, TITLES_PER_SITEMAP, XML_HEADERS } from "@/lib/seo/sitemap";
 
 export const revalidate = 3600;
 
 export async function GET() {
-  const [titles, people] = await Promise.all([countIndexable(), countPeople()]);
-  const chunks = Math.max(1, Math.ceil(titles / TITLES_PER_SITEMAP));
+  const [maxId, people] = await Promise.all([maxTitleId(), countPeople()]);
+  // titles-N holds title ids N*size+1 .. (N+1)*size (see sitemapTitles).
+  const chunks = Math.max(1, Math.ceil(maxId / TITLES_PER_SITEMAP));
   const personChunks = Math.ceil(people / TITLES_PER_SITEMAP);
   const locs = [
     absoluteUrl("/sitemaps/pages.xml"),

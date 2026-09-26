@@ -344,12 +344,25 @@ export interface SitemapEntry {
   source_updated_at: string | null;
 }
 
-export function sitemapTitles(offset: number, limit: number): Promise<SitemapEntry[]> {
-  return cachedQuery(["sitemap", offset, limit], [TAG.catalog], 3600, async () => (await getDb()).all<SitemapEntry>(
+/**
+ * Indexable titles with ids in (fromId, toId], for sitemap file N = ids N*size+1 .. (N+1)*size.
+ * A primary-key range ("+indexable" keeps D1 off the indexable indexes, which it otherwise
+ * scans whole): ~37k rows read per file, where an OFFSET page read ~220k while D1 answered
+ * nothing else.
+ */
+export function sitemapTitles(fromId: number, toId: number): Promise<SitemapEntry[]> {
+  return cachedQuery(["sitemap-range", fromId, toId], [TAG.catalog], 3600, async () => (await getDb()).all<SitemapEntry>(
     `SELECT t.kind, s.slug, t.updated_at, t.source_updated_at ${CARD_JOIN}
-     WHERE t.indexable = 1 ORDER BY t.id LIMIT ? OFFSET ?`,
-    [limit, offset],
+     WHERE t.id > ? AND t.id <= ? AND +t.indexable = 1 ORDER BY t.id`,
+    [fromId, toId],
   ));
+}
+
+/** Highest title id (ids are never reused), for the number of title sitemap files. */
+export function maxTitleId(): Promise<number> {
+  return cachedQuery(["max-title-id"], [TAG.catalog], 3600, async () =>
+    (await (await getDb()).first<{ id: number | null }>("SELECT MAX(id) AS id FROM titles"))?.id ?? 0,
+  );
 }
 
 /**

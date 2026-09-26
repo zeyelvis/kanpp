@@ -1,6 +1,6 @@
 import { absoluteUrl } from "@/lib/config/site";
 import { sitemapPeople } from "@/lib/data/people";
-import { recentSitemapTitles, sitemapTitles } from "@/lib/data/titles";
+import { maxTitleId, recentSitemapTitles, sitemapTitles } from "@/lib/data/titles";
 import { topicCounts } from "@/lib/data/topics";
 import { allTopics, MIN_TOPIC_TITLES, topicPath } from "@/lib/domain/topics";
 import { KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
@@ -23,7 +23,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) 
   if (file === "topics.xml") {
     // Only topics with enough titles to be indexed.
     const counts = await topicCounts();
-    const entries = allTopics().filter((t) => (counts[t.name] ?? 0) >= MIN_TOPIC_TITLES).map((t) => ({ loc: absoluteUrl(topicPath(t)) }));
+    const entries = allTopics().filter((t) => (counts[t.name]?.count ?? 0) >= MIN_TOPIC_TITLES).map((t) => ({ loc: absoluteUrl(topicPath(t)) }));
     return new Response(urlset(entries), { headers: XML_HEADERS });
   }
 
@@ -43,8 +43,9 @@ export async function GET(_req: Request, ctx: RouteContext<"/sitemaps/[file]">) 
 
   const m = file.match(/^titles-(\d{1,4})\.xml$/);
   if (!m) return new Response("Not found", { status: 404 });
-  const rows = await sitemapTitles(Number(m[1]) * TITLES_PER_SITEMAP, TITLES_PER_SITEMAP);
-  if (rows.length === 0 && m[1] !== "0") return new Response("Not found", { status: 404 });
+  const n = Number(m[1]);
+  if (n > 0 && n * TITLES_PER_SITEMAP >= (await maxTitleId())) return new Response("Not found", { status: 404 });
+  const rows = await sitemapTitles(n * TITLES_PER_SITEMAP, (n + 1) * TITLES_PER_SITEMAP);
   const entries = rows.map((r) => ({
     loc: absoluteUrl(titlePath(r.kind, r.slug)),
     lastmod: lastModified(r.updated_at, r.source_updated_at),
