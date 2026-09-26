@@ -12,14 +12,15 @@ export interface Topic {
   regions?: string[];
   genres?: string[];
   year?: number;
-  /** Grouping on the topic index and for "related topics". */
-  group: "region" | "genre" | "year";
+  /** Grouping on the topic index and for "related topics"; "combo" is a region and a genre. */
+  group: "region" | "genre" | "combo" | "year";
 }
 
 export const MIN_TOPIC_TITLES = 24;
 
 const R = (name: string, kind: Kind, regions: string[]): Topic => ({ name, kind, regions, group: "region" });
 const G = (name: string, kind: Kind, genres: string[]): Topic => ({ name, kind, genres, group: "genre" });
+const C = (name: string, kind: Kind, region: string, genre: string): Topic => ({ name, kind, regions: [region], genres: [genre], group: "combo" });
 
 function yearTopics(now: number): Topic[] {
   const years = [now, now - 1, now - 2];
@@ -93,6 +94,50 @@ const FIXED: Topic[] = [
   R("国产纪录片", "doc", ["CN"]),
   R("欧美纪录片", "doc", WESTERN),
   G("犯罪纪录片", "doc", ["犯罪"]),
+  // Region and genre together, where the catalog has a few hundred titles or more (Sep 2026).
+  C("国产悬疑剧", "tv", "CN", "悬疑"),
+  C("国产家庭剧", "tv", "CN", "家庭"),
+  C("国产犯罪剧", "tv", "CN", "犯罪"),
+  C("国产科幻奇幻剧", "tv", "CN", "科幻奇幻"),
+  C("韩国悬疑剧", "tv", "KR", "悬疑"),
+  C("韩国犯罪剧", "tv", "KR", "犯罪"),
+  C("日本悬疑剧", "tv", "JP", "悬疑"),
+  C("日本犯罪剧", "tv", "JP", "犯罪"),
+  C("美国犯罪剧", "tv", "US", "犯罪"),
+  C("美国悬疑剧", "tv", "US", "悬疑"),
+  C("美国科幻奇幻剧", "tv", "US", "科幻奇幻"),
+  C("英国犯罪剧", "tv", "GB", "犯罪"),
+  C("英国悬疑剧", "tv", "GB", "悬疑"),
+  C("国产动作电影", "movie", "CN", "动作"),
+  C("国产喜剧电影", "movie", "CN", "喜剧"),
+  C("国产爱情电影", "movie", "CN", "爱情"),
+  C("国产悬疑电影", "movie", "CN", "悬疑"),
+  C("国产犯罪电影", "movie", "CN", "犯罪"),
+  C("香港动作电影", "movie", "HK", "动作"),
+  C("香港喜剧电影", "movie", "HK", "喜剧"),
+  C("香港犯罪电影", "movie", "HK", "犯罪"),
+  C("香港爱情电影", "movie", "HK", "爱情"),
+  C("韩国惊悚电影", "movie", "KR", "惊悚"),
+  C("韩国爱情电影", "movie", "KR", "爱情"),
+  C("韩国动作电影", "movie", "KR", "动作"),
+  C("韩国犯罪电影", "movie", "KR", "犯罪"),
+  C("日本恐怖电影", "movie", "JP", "恐怖"),
+  C("日本爱情电影", "movie", "JP", "爱情"),
+  C("日本动画电影", "movie", "JP", "动画"),
+  C("美国动作电影", "movie", "US", "动作"),
+  C("美国喜剧电影", "movie", "US", "喜剧"),
+  C("美国科幻电影", "movie", "US", "科幻"),
+  C("美国恐怖电影", "movie", "US", "恐怖"),
+  C("美国犯罪电影", "movie", "US", "犯罪"),
+  C("英国犯罪电影", "movie", "GB", "犯罪"),
+  C("法国喜剧电影", "movie", "FR", "喜剧"),
+  C("印度动作电影", "movie", "IN", "动作"),
+  C("泰国恐怖电影", "movie", "TH", "恐怖"),
+  C("日本搞笑动漫", "anime", "JP", "喜剧"),
+  C("日本科幻奇幻动漫", "anime", "JP", "科幻奇幻"),
+  C("日本动作冒险动漫", "anime", "JP", "动作冒险"),
+  C("国产科幻奇幻动漫", "anime", "CN", "科幻奇幻"),
+  C("国产动作冒险动漫", "anime", "CN", "动作冒险"),
 ];
 
 /** All topics; year topics follow the calendar (this year and the two before). */
@@ -108,9 +153,9 @@ export function topicPath(topic: Topic | string): string {
   return `/topic/${encodeURIComponent(typeof topic === "string" ? topic : topic.name)}`;
 }
 
-/** A channel's own topics: regions and genres, plus this year's. */
+/** A channel's own topics: regions and genres, plus this year's (combinations are on /topic). */
 export function topicsForKind(kind: Kind, now = new Date().getFullYear()): Topic[] {
-  return allTopics(now).filter((t) => t.kind === kind && (t.group !== "year" || (t.year === now && !t.regions)));
+  return allTopics(now).filter((t) => t.kind === kind && (t.group === "region" || t.group === "genre" || (t.year === now && !t.regions)));
 }
 
 /** A cross-channel selection for the home page. */
@@ -130,13 +175,17 @@ export function topicsForTitle(t: { kind: Kind; countries: string[]; genres: str
       (topic.year == null || topic.year === t.year),
   );
   const specificity = (x: Topic) => (x.regions ? 1 : 0) + (x.genres ? 1 : 0) + (x.year != null ? 1 : 0) - (x.regions && x.regions.length > 1 ? 0.5 : 0);
-  return matches.sort((a, b) => specificity(b) - specificity(a)).slice(0, 5);
+  return matches.sort((a, b) => specificity(b) - specificity(a)).slice(0, 6);
 }
 
-/** Other topics worth linking from a topic page: same kind first, then same region elsewhere. */
+/**
+ * Other topics worth linking from a topic page: same year, then the same kind (those sharing a
+ * region or genre first, so 韩剧 links 韩国悬疑剧 and back), then the same region elsewhere.
+ */
 export function relatedTopics(topic: Topic, now?: number): Topic[] {
   const all = allTopics(now).filter((x) => x.name !== topic.name);
-  const sameKind = all.filter((x) => x.kind === topic.kind && x.group !== "year");
+  const shared = (x: Topic) => (x.regions?.some((r) => topic.regions?.includes(r)) ? 1 : 0) + (x.genres?.some((g) => topic.genres?.includes(g)) ? 1 : 0);
+  const sameKind = all.filter((x) => x.kind === topic.kind && x.group !== "year").sort((a, b) => shared(b) - shared(a));
   const sameYear = all.filter((x) => x.year != null && x.year === topic.year);
   const sameRegion = all.filter((x) => x.kind !== topic.kind && topic.regions && x.regions?.some((r) => topic.regions!.includes(r)) && x.year == null);
   return [...new Map([...sameYear, ...sameKind, ...sameRegion].map((x) => [x.name, x])).values()].slice(0, 16);

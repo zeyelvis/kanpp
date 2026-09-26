@@ -341,9 +341,37 @@ describe("topics", () => {
   it("link a title to its most specific topics", async () => {
     const { topicsForTitle } = await import("@/lib/domain/topics");
     const names = topicsForTitle({ kind: "tv", countries: ["KR"], genres: ["剧情", "犯罪"], year: 2026 }, 2026).map((t) => t.name);
-    expect(names[0]).toBe("2026年韩剧");
+    expect(names.slice(0, 2)).toEqual(["韩国犯罪剧", "2026年韩剧"]);
     expect(names).toEqual(expect.arrayContaining(["韩剧", "犯罪剧", "2026年电视剧"]));
     expect(names).not.toContain("美剧");
+    expect(names).not.toContain("韩国悬疑剧");
+  });
+
+  it("link a topic to its narrower and broader neighbours first", async () => {
+    const { findTopic, relatedTopics, topicsForKind } = await import("@/lib/domain/topics");
+    const near = (name: string) => relatedTopics(findTopic(name, 2026)!, 2026).map((t) => t.name);
+    expect(near("韩剧").slice(0, 2)).toEqual(["韩国悬疑剧", "韩国犯罪剧"]);
+    expect(near("韩国悬疑剧").slice(0, 6)).toEqual(expect.arrayContaining(["韩剧", "悬疑剧", "国产悬疑剧"]));
+    expect(topicsForKind("tv", 2026).map((t) => t.name)).not.toContain("韩国悬疑剧");
+  });
+
+  it("count every topic in batches D1 accepts", async () => {
+    const { allTopics } = await import("@/lib/domain/topics");
+    const { computeTopicCounts } = await import("@/lib/ingest/topic-counts");
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const db = {
+      first: async (sql: string, params: unknown[] = []) => {
+        queries.push({ sql, params });
+        return Object.fromEntries((sql.match(/ AS [cr]\d+/g) ?? []).map((m) => [m.slice(4), 1]));
+      },
+    };
+    const counts = await computeTopicCounts(db as never, 2026);
+    expect(Object.keys(counts).length).toBe(allTopics(2026).length);
+    expect(Object.values(counts).every((c) => c.count === 1 && c.recent === 1)).toBe(true);
+    for (const q of queries) {
+      expect(q.params.length).toBeLessThanOrEqual(100);
+      expect((q.sql.match(/ AS [cr]\d+/g) ?? []).length).toBeLessThanOrEqual(80);
+    }
   });
 
   it("write the intro from the catalog's numbers only", async () => {

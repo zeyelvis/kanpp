@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/topic" },
 };
 
-const GROUP_LABEL: Record<Topic["group"], string> = { region: "按地区", genre: "按类型", year: "按年份" };
+const GROUP_LABEL: Record<Topic["group"], string> = { region: "按地区", genre: "按类型", combo: "细分", year: "按年份" };
 
 export default function TopicIndexPage() {
   const topics = allTopics();
@@ -33,7 +33,7 @@ export default function TopicIndexPage() {
             <h2 id={`k-${kind}`} className="text-lg font-semibold sm:text-xl">
               {KIND_LABEL[kind]}
             </h2>
-            {(["region", "genre", "year"] as const).map((group) => {
+            {(["region", "genre", "combo", "year"] as const).map((group) => {
               const list = mine.filter((t) => t.group === group);
               if (list.length === 0) return null;
               return (

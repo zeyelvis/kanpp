@@ -30,24 +30,40 @@ export function topicConditions(topic: Topic): { clauses: string[]; params: (str
 }
 
 /**
- * Counts of every topic: one scan per kind counts all of that kind's topics at once (a scan
- * per topic held D1, which runs one query at a time, long enough for pages to time out).
+ * Counts of every topic: a few scans per kind count all of that kind's topics at once (a
+ * scan per topic held D1, which runs one query at a time, long enough for pages to time out).
  */
 export async function computeTopicCounts(db: Db, now = new Date().getFullYear()): Promise<Record<string, TopicCount>> {
   const byKind = new Map<string, Topic[]>();
   for (const t of allTopics(now)) byKind.set(t.kind, [...(byKind.get(t.kind) ?? []), t]);
   const out: Record<string, TopicCount> = {};
+  const cond = (p: { clauses: string[] }) => (p.clauses.length ? p.clauses.join(" AND ") : "1");
   for (const [kind, list] of byKind) {
-    const parts = list.map((t) => topicConditions(t));
-    const cond = (p: { clauses: string[] }) => (p.clauses.length ? p.clauses.join(" AND ") : "1");
-    const row = await db.first<Record<string, number | null>>(
-      `SELECT ${parts
-        .map((p, i) => `SUM(${cond(p)}) AS c${i}, SUM((${cond(p)}) AND t.source_updated_at >= datetime('now', '-30 days')) AS r${i}`)
-        .join(", ")}
-       FROM titles t WHERE t.indexable = 1 AND t.kind = ?`,
-      [...parts.flatMap((p) => [...p.params, ...p.params]), kind],
-    );
-    list.forEach((t, i) => (out[t.name] = { count: row?.[`c${i}`] ?? 0, recent: row?.[`r${i}`] ?? 0 }));
+    // D1 allows 100 bound parameters and 100 result columns per query: a kind's topics are
+    // counted in as few batches as fit (each topic takes two columns and twice its params).
+    const batches: Topic[][] = [[]];
+    let params = 1;
+    for (const t of list) {
+      const need = topicConditions(t).params.length * 2;
+      const current = batches.at(-1)!;
+      if (current.length >= 40 || params + need > 95) {
+        batches.push([]);
+        params = 1;
+      }
+      batches.at(-1)!.push(t);
+      params += need;
+    }
+    for (const batch of batches) {
+      const parts = batch.map((t) => topicConditions(t));
+      const row = await db.first<Record<string, number | null>>(
+        `SELECT ${parts
+          .map((p, i) => `SUM(${cond(p)}) AS c${i}, SUM((${cond(p)}) AND t.source_updated_at >= datetime('now', '-30 days')) AS r${i}`)
+          .join(", ")}
+         FROM titles t WHERE t.indexable = 1 AND t.kind = ?`,
+        [...parts.flatMap((p) => [...p.params, ...p.params]), kind],
+      );
+      batch.forEach((t, i) => (out[t.name] = { count: row?.[`c${i}`] ?? 0, recent: row?.[`r${i}`] ?? 0 }));
+    }
   }
   return out;
 }
