@@ -247,6 +247,9 @@ async function main() {
   const db = openDb("remote");
   if (!args.report) {
     const gsc = new SearchConsole();
+    // The recent sitemap lists titles with new episodes or new on the site: resubmitting it
+    // daily asks Google to re-read it soon, so they are discovered faster.
+    await gsc.submitSitemap(`${site.url}/sitemaps/recent.xml`).catch((err) => log(`sitemap submit failed: ${err instanceof Error ? err.message : err}`));
     await pullPerformance(db, gsc);
     const limit = Number(args.inspect);
     if (limit > 0) await inspectSample(db, gsc, limit);

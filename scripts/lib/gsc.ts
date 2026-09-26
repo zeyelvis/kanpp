@@ -61,15 +61,15 @@ export class SearchConsole {
     return body.access_token;
   }
 
-  private async call<T>(url: string, body: unknown): Promise<T> {
+  private async call<T>(url: string, body: unknown, method = "POST"): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       const res = await fetch(url, {
-        method: "POST",
+        method,
         headers: { Authorization: `Bearer ${await this.accessToken()}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(60_000),
       }).catch((err: unknown) => err as Error);
-      if (res instanceof Response && res.ok) return (await res.json()) as T;
+      if (res instanceof Response && res.ok) return (res.status === 204 ? {} : await res.json().catch(() => ({}))) as T;
       const status = res instanceof Response ? res.status : 0;
       // Quota (429) and server errors: back off and retry a few times.
       if (attempt >= 4 || (status !== 0 && status !== 429 && status < 500)) {
@@ -89,6 +89,11 @@ export class SearchConsole {
       rows.push(...(page.rows ?? []));
       if ((page.rows?.length ?? 0) < 25_000) return rows;
     }
+  }
+
+  /** Submits (or resubmits) a sitemap: Google then re-reads it soon. */
+  async submitSitemap(url: string): Promise<void> {
+    await this.call(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(GSC_SITE)}/sitemaps/${encodeURIComponent(url)}`, undefined, "PUT");
   }
 
   /** URL Inspection (2,000 a day per property). Coverage states in English, for stable matching. */
