@@ -7,7 +7,7 @@ const EMAIL = `dmca@${site.domain}`;
 
 export const metadata: Metadata = {
   title: "版权投诉 / Copyright & DMCA",
-  description: `${site.name}版权投诉与下架说明：权利人可发送通知至 ${EMAIL}，我们会在收到有效通知后尽快处理。`,
+  description: `${site.name}版权投诉与下架说明：权利人可发送通知至 ${EMAIL}，收到有效通知后 24 小时内处理。`,
   alternates: { canonical: "/dmca" },
 };
 
@@ -35,7 +35,7 @@ export default function DmcaPage() {
           <a href={`mailto:${EMAIL}`} className="font-medium text-accent">
             {EMAIL}
           </a>
-          。收到内容完整的通知后，我们会在 3 个工作日内下架相关页面，并回复处理结果。
+          。收到内容完整的通知后，我们会在 24 小时内下架相关页面，并回复处理结果。
         </p>
       </section>
 
@@ -58,7 +58,7 @@ export default function DmcaPage() {
           <a href={`mailto:${EMAIL}`} className="font-medium text-accent">
             {EMAIL}
           </a>
-          . We remove the reported pages within 3 business days of receiving a complete notice and reply with the outcome.
+          . We remove the reported pages within 24 hours of receiving a complete notice and reply with the outcome.
         </p>
       </section>
     </article>
