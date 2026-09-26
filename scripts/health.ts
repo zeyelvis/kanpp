@@ -15,6 +15,7 @@ import { join, resolve } from "node:path";
 import { parseArgs, promisify } from "node:util";
 import type { Db } from "@/lib/db/types";
 import { normalizeKey } from "@/lib/domain/normalize";
+import { gscReport, reportLines as gscLines } from "./gsc-sync";
 import { cloudflareApiToken, loadEnv, openDb, parseDbTarget } from "./lib/open-db";
 
 loadEnv();
@@ -365,13 +366,15 @@ async function main() {
   const token = cloudflareApiToken();
   const zone = await zoneId(token);
 
-  const [web, platform, cat, seo, bingStats, people] = await Promise.all([
+  const [web, platform, cat, seo, bingStats, people, google] = await Promise.all([
     traffic(token, zone, since, until),
     workerAndD1(token, since, until),
     catalog(),
     args["skip-seo"] ? Promise.resolve(null) : seoCheck(),
     bing(),
     visitors(token).catch((err) => ({ error: String(err instanceof Error ? err.message : err) })),
+    // Search Console data that scripts/gsc-sync.ts stored in D1 (run before this report).
+    gscReport(openDb(parseDbTarget(args.db))).catch((err) => ({ error: String(err instanceof Error ? err.message : err) })),
   ]);
 
   const alerts: string[] = [];
@@ -398,8 +401,11 @@ async function main() {
     if (o.hoursOpen >= 24) alerts.push(`版权通知 #${o.id}（${o.sender}）已等待 ${o.hoursOpen} 小时未处理：npx tsx scripts/takedown.ts list`);
   }
   if (seo && !seo.passed) alerts.push(`SEO 巡检未通过：${seo.summary.split("\n").slice(-3).join(" / ")}`);
+  if (!("error" in google) && google.canonicalMismatches.length) {
+    alerts.push(`Google 没有采用 ${google.canonicalMismatches.length} 个网页的规范网址，例如 ${google.canonicalMismatches[0].path} → ${google.canonicalMismatches[0].google_canonical}`);
+  }
 
-  const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, visitors: people, web, platform, catalog: cat, seo, bing: bingStats };
+  const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, visitors: people, web, platform, catalog: cat, seo, bing: bingStats, google };
   // Only real reports are kept: a run against a local copy (--db) is just printed.
   if (args.db === "remote") {
     const dir = join(ROOT, "data/health");
@@ -433,6 +439,7 @@ async function main() {
     `搜索（近 7 天）：${n(cat.search.searches)} 次，没结果 ${n(cat.search.misses)} 次${cat.search.gaps.length ? `；补片清单：\n${cat.search.gaps.slice(0, 10).map((g) => `  - 「${g.term}」${g.searches} 次：${g.finding}`).join("\n")}` : ""}`,
     seo ? `SEO 巡检：${seo.passed ? "通过" : "未通过"}（${seo.summary.split("\n").at(-1)}）` : "SEO 巡检：跳过",
     bingStats ? `Bing：已收录 ${bingStats.inIndex}，近 7 天抓取 ${bingStats.crawledPagesLast7d} 页，展示 ${bingStats.impressionsLast7d}，点击 ${bingStats.clicksLast7d}` : "Bing：读取失败",
+    ...("error" in google ? [`Google Search Console：读取失败（${google.error}）`] : gscLines(google)),
   ];
   console.log(lines.join("\n"));
 
