@@ -44,7 +44,8 @@ export async function generateMetadata({ params, searchParams }: PageProps<"/[ki
   }
   const total = await countByKind(kind);
   return {
-    title: page > 1 ? `${label}在线观看 - 第${page}页` : `${label}在线观看 - 最近更新`,
+    // "电视剧大全", "最新电影": how people search for a catalog (it is one: tens of thousands).
+    title: page > 1 ? `${label}大全 - 第${page}页` : `${label}大全 - 最新${label}在线观看`,
     description: `${site.name}${label}频道，共收录${total}部${label}，可按类型、地区、年份筛选，每部都有简介、演职员和可播放线路。`,
     alternates: { canonical: browseHref(base, f, page) },
     openGraph: { url: browseHref(base, f, page), images: [DEFAULT_OG_IMAGE] },

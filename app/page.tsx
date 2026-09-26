@@ -16,6 +16,8 @@ import { tmdbImage } from "@/lib/images";
 export const revalidate = 600;
 
 export const metadata: Metadata = {
+  // The brand alone is not searched: name what the site has.
+  title: { absolute: `${site.name} - 在线看电视剧、电影、动漫、综艺 | ${site.tagline}` },
   alternates: { canonical: "/" },
   openGraph: { url: "/", images: [DEFAULT_OG_IMAGE] },
 };
