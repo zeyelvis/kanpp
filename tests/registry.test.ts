@@ -225,3 +225,22 @@ describe("people", () => {
     ]);
   });
 });
+
+describe("catalog lease", () => {
+  it("lets one job at a time hold it, and respects a checked-out mirror", async () => {
+    const { acquireLease, releaseLease, withLease, currentLease } = await import("@/lib/ingest/lease");
+    const db = freshDb();
+    const a = `worker:catalog:${crypto.randomUUID()}`;
+    const b = `worker:series:${crypto.randomUUID()}`;
+    expect(await acquireLease(db, a, 20)).toBe(true);
+    expect(await acquireLease(db, b, 20)).toBe(false);
+    expect((await currentLease(db))?.holder).toBe(a);
+    await releaseLease(db, b); // not the holder: no effect
+    expect(await acquireLease(db, b, 20)).toBe(false);
+    await releaseLease(db, a);
+    expect(await currentLease(db)).toBeNull();
+    expect(await withLease(db, b, 20, async () => "ran")).toBe("ran");
+    await db.run("INSERT INTO sync_state (key, value) VALUES ('mirror:checkout', '2026-09-26T08:00:00Z')");
+    expect(await withLease(db, a, 20, async () => "ran")).toBeNull();
+  });
+});

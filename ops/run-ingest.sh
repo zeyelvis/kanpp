@@ -25,9 +25,9 @@ fi
 echo "=== $(date -u +%FT%TZ) ingest start"
 caffeinate -i npx tsx scripts/ingest.ts --db=remote --hours=5 --backfill=5 --refresh-series=300 --limit=2000 --concurrency=8
 echo "=== $(date -u +%FT%TZ) ingest end (exit $?)"
-# Chinese animation / variety that TMDB lacks: titles from the sources' own metadata (this
-# script already holds the ingest lock, hence --no-lock).
-caffeinate -i npx tsx scripts/source-titles.ts --db=remote --no-lock
+# Chinese animation / variety that TMDB lacks: titles from the sources' own metadata. Each
+# script also takes the catalog lease in D1 (lib/ingest/lease.ts), shared with the ingest Worker.
+caffeinate -i npx tsx scripts/source-titles.ts --db=remote
 echo "=== $(date -u +%FT%TZ) source titles end (exit $?)"
 # Update reminders for followed titles that just got new episodes (scripts/push-updates.ts).
 caffeinate -i npx tsx scripts/push-updates.ts

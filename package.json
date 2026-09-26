@@ -15,7 +15,8 @@
     "db:migrate:local": "wrangler d1 migrations apply kanpp-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply kanpp-db --remote",
     "ingest": "tsx scripts/ingest.ts",
-    "seo:check": "tsx scripts/seo-check.ts"
+    "seo:check": "tsx scripts/seo-check.ts",
+    "ingest:deploy": "cd ingest && wrangler deploy"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.6",
@@ -31,14 +32,13 @@
     "@types/node": "^22.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "http_ece": "^1.2.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.1",
-    "web-push": "^3.6.7",
     "wrangler": "^4.138.0"
   }
 }

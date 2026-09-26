@@ -10,7 +10,8 @@
  *                                             release the lock (--keep: keep it and re-snapshot)
  *   npx tsx scripts/mirror.ts push --keep --skip-pending   mid-run push of what is resolved so far
  *
- * While the lock exists nothing else may write remote D1 (ops/run-ingest.sh checks it): new
+ * While the lock exists nothing else may write remote D1 (ops/run-ingest.sh checks the file, the
+ * ingest Worker the "mirror:checkout" flag in sync_state): new
  * title ids are assigned locally and only line up if remote still equals the snapshot, which
  * push verifies before writing anything. Titles, slugs and aliases are never deleted, so
  * upserting the changed rows is the complete diff. Ingest runs still writing the mirror are
@@ -23,6 +24,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 import type { SqlValue, Statement } from "@/lib/db/types";
 import { personPath } from "@/lib/domain/slug";
+import { currentLease, MIRROR_CHECKOUT } from "@/lib/ingest/lease";
 import { loadEnv, openDb } from "./lib/open-db";
 import { announceTitles, notifySite } from "./lib/revalidate";
 
@@ -84,9 +86,21 @@ function counts(db: DatabaseSync, schema = "main") {
   return out;
 }
 
-function pull() {
+async function pull() {
   if (existsSync(LOCK)) throw new Error(`${LOCK} exists: a mirror is already checked out (push it first)`);
   if (ingestRunning("scripts/ingest.ts --db=remote")) throw new Error("a remote ingest run is active: wait for it to finish");
+  // The ingest Worker's jobs check this flag before taking the catalog lease: set it first,
+  // then make sure no job already holds the lease, so nothing writes during the export.
+  const remote = openDb("remote");
+  await remote.run(
+    "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+    [MIRROR_CHECKOUT, new Date().toISOString()],
+  );
+  const lease = await currentLease(remote);
+  if (lease) {
+    await remote.run("UPDATE sync_state SET value = '' WHERE key = ?", [MIRROR_CHECKOUT]);
+    throw new Error(`a catalog job (${lease.holder}) runs until ${lease.until}: try again after it`);
+  }
   mkdirSync(DIR, { recursive: true });
   // Lock first so the scheduler stops writing before the export starts.
   closeSync(openSync(LOCK, "w"));
@@ -272,14 +286,15 @@ async function pushPaused() {
     log("pushed; mirror stays checked out with a fresh snapshot");
   } else {
     rmSync(LOCK, { force: true });
-    log("pushed; lock released");
+    await remote.run("UPDATE sync_state SET value = '' WHERE key = ?", [MIRROR_CHECKOUT]);
+    log("pushed; lock released (the ingest Worker resumes)");
   }
   db.close();
 }
 
 async function main() {
   const command = positionals[0];
-  if (command === "pull") return pull();
+  if (command === "pull") return await pull();
   if (command === "push") return push();
   throw new Error("usage: mirror.ts pull | push [--dry-run] [--keep] [--skip-pending]");
 }

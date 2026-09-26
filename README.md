@@ -36,10 +36,28 @@ CMS 片源 ──> source_items ──> 匹配（豆瓣 ID > 库内别名精确�
 3. 执行 `gh secret set TMDB_API_KEY`。
 4. 执行 `gh variable set AUTOMATION_ENABLED --body true`。
 
-在 GitHub Actions 能用之前，用 `ops/` 里的本机 launchd 定时任务代替（安装方法写在 plist 文件里），目前在运行的有：
+## 定时入库（Cloudflare Worker `kanpp-ingest`）
 
-- `tv.kanpp.ingest`（每 4 小时）：入库、按片源资料建国产动漫和综艺条目、给开启了更新提醒的设备发新集通知（`scripts/push-updates.ts`）。
-- `tv.kanpp.health`（每天 09:10）：健康报告（`scripts/health.ts`），包括访客与来源、爬虫、数据库负载、SEO 检查、Bing、补片清单和版权通知；有问题时弹出系统通知，报告存在 `data/health/`。
+入库在 Cloudflare 上按计划运行（`ingest/worker.ts`），不依赖任何一台电脑开机。每 4 小时一轮，三个任务错开运行：
+
+| 时间（UTC） | 任务 | 内容 |
+|---|---|---|
+| 每 4 小时的 :05 | catalog | 片源近 5 小时的更新和目录回填 → 匹配 → 发布门槛 → 影人 → 刷新缓存、IndexNow |
+| :25 | series | 刷新连载剧的 TMDB 资料 → 发布门槛 → 影人 |
+| :45 | extras | 按片源资料建国产动漫、综艺条目 → 给开启了更新提醒的设备发新集通知 |
+
+- 代码和本机脚本共用 `lib/ingest/`：`pipeline.ts`、`source-titles-job.ts`、`push-job.ts`。本机仍然可以手动运行 `scripts/ingest.ts` 等脚本。
+- 同一时间只有一个任务在写库：云端任务和本机脚本共用数据库里的租约（`lib/ingest/lease.ts`）。签出本地镜像（`scripts/mirror.ts pull`）期间，云端任务会自动跳过。
+- 每个任务的结果记在 `sync_state` 的 `job:catalog` / `job:series` / `job:extras` 里，健康报告会读取；失败、被跳过或超过 9 小时没运行都会报警。
+- 部署：`npm run ingest:deploy`。首次部署后执行一次 `bash ops/set-ingest-secrets.sh`，它从 `.env.local` 读出 TMDB、刷新缓存和推送用的三个密钥，存进 Cloudflare，不会显示出来。
+- 手动运行：`curl -X POST -H "Authorization: Bearer $REVALIDATE_SECRET" "https://kanpp-ingest.zeyelvis.workers.dev/run?job=catalog"`。可选参数 `hours`、`backfill`、`limit`，其中 `limit=0` 表示只抓取、不匹配。
+
+## 本机定时任务（launchd）
+
+`ops/` 里的 plist 文件写有安装方法。
+
+- `tv.kanpp.health`（每天 09:10）：健康报告（`scripts/health.ts`），包括访客与来源、爬虫、入库任务、数据库负载、SEO 检查、Bing、补片清单和版权通知。有问题时弹出系统通知，报告存在 `data/health/`。
+- `tv.kanpp.ingest`：原来的本机入库任务，云端入库确认稳定后停用。
 
 ## 版权通知处理
 

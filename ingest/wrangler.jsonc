@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // Catalog jobs on a schedule (ingest/worker.ts). No routes: it only runs from cron, or from
+  // POST /run on its workers.dev URL with the revalidate secret.
+  "name": "kanpp-ingest",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Resolves the "@/..." imports of lib/ the same way the app does.
+  "tsconfig": "../tsconfig.json",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Every 4 hours; intervals of an hour or more give each run up to 15 minutes.
+  "triggers": { "crons": ["5 */4 * * *", "25 */4 * * *", "45 */4 * * *"] },
+  "limits": { "cpu_ms": 300000 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kanpp-db",
+      "database_id": "1142d043-d0ee-4d0d-9574-9a980f44568a"
+    }
+  ],
+  "services": [{ "binding": "SITE", "service": "kanpp" }],
+  "observability": { "enabled": true }
+}
