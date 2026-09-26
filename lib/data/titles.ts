@@ -210,14 +210,14 @@ async function upcomingQuery(days: number, limit: number): Promise<UpcomingCard[
 }
 
 /** Same kind, sharing the first genre; the internal-link rail on title pages. */
-export function relatedTitles(t: { id: number; kind: Kind; genres: string[] }, limit: number): Promise<TitleCard[]> {
+export async function relatedTitles(t: { id: number; kind: Kind; genres: string[] }, limit: number): Promise<TitleCard[]> {
   const genre = t.genres[0] ?? null;
-  return cachedQuery(["related", t.id, t.kind, genre, limit], [TAG.related], 86400, async () => (await getDb()).all<TitleCard>(
+  return (await getDb()).all<TitleCard>(
     `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
      WHERE t.indexable = 1 AND t.kind = ? AND t.id <> ? ${genre ? "AND t.genres LIKE ?" : ""}
      ORDER BY t.popularity DESC LIMIT ?`,
     genre ? [t.kind, t.id, `%"${genre}"%`, limit] : [t.kind, t.id, limit],
-  ));
+  );
 }
 
 /** Catalog sizes precomputed by the ingest run (falls back to counting if never stored). */
@@ -237,21 +237,14 @@ export function countByKind(kind: Kind): Promise<number> {
 }
 
 /** Slug lookup. Returns the title plus whether this slug is its canonical one. */
-export const resolveSlug = cache(async (slug: string): Promise<{ title: TitleDetail; canonicalSlug: string; isCanonical: boolean } | null> => {
-  const hit = await cachedQuery(["slug", slug], [TAG.slugs], 86400, async () =>
-    (await getDb()).first<{ title_id: number; is_canonical: number }>("SELECT title_id, is_canonical FROM slugs WHERE slug = ?", [slug]),
-  );
-  if (!hit) return null;
-  const title = await getTitle(hit.title_id);
-  if (!title) return null;
-  return { title, canonicalSlug: title.slug, isCanonical: hit.is_canonical === 1 };
-});
+/*
+ * Per-page data (one title's record, seasons, lines, updates, related titles) is read from D1
+ * directly: the page itself is ISR-cached, and a data-cache miss (R2 read, tag check, R2
+ * write) costs 500-900 ms against ~50 ms for the query. Pages are tagged title:{id} by
+ * tagTitle so an ingest run still refreshes exactly the titles it changed.
+ */
 
-export const getTitle = cache(async (id: number): Promise<TitleDetail | null> => {
-  const row = await cachedQuery(["title", id], [TAG.title(id)], 3600, async () =>
-    (await getDb()).first<Record<string, unknown>>(`SELECT t.*, s.slug ${CARD_JOIN} WHERE t.id = ?`, [id]),
-  );
-  if (!row) return null;
+function parseTitle(row: Record<string, unknown>): TitleDetail {
   const json = <T,>(v: unknown): T => JSON.parse((v as string) || "[]") as T;
   return {
     ...(row as unknown as TitleDetail),
@@ -261,25 +254,47 @@ export const getTitle = cache(async (id: number): Promise<TitleDetail | null> =>
     cast: json<CastMember[]>(row.cast_json),
     crew: json<CrewMember[]>(row.crew_json),
   };
+}
+
+/**
+ * The title a URL slug names (any of its slugs), or null. A miss is remembered under the
+ * "slugs" tag, which an ingest run that creates titles expires: that tag reaches only 404
+ * pages, never the pages of existing titles.
+ */
+export const resolveSlug = cache(async (slug: string): Promise<{ title: TitleDetail; canonicalSlug: string; isCanonical: boolean } | null> => {
+  const row = await (await getDb()).first<Record<string, unknown> & { is_canonical: number }>(
+    `SELECT t.*, c.slug, s.is_canonical FROM slugs s JOIN titles t ON t.id = s.title_id
+     JOIN slugs c ON c.title_id = t.id AND c.is_canonical = 1 WHERE s.slug = ?`,
+    [slug],
+  );
+  if (!row) {
+    await cachedQuery(["slug-miss", slug], [TAG.slugs], 86400, async () => null);
+    return null;
+  }
+  const title = parseTitle(row);
+  return { title, canonicalSlug: title.slug, isCanonical: row.is_canonical === 1 };
 });
 
-export const getSeasons = cache((titleId: number): Promise<Season[]> =>
-  cachedQuery(["seasons", titleId], [TAG.title(titleId)], 3600, async () =>
-    (await getDb()).all<Season>(
-      "SELECT season_number, name, overview, air_date, episode_count, poster_path FROM seasons WHERE title_id = ? ORDER BY season_number",
-      [titleId],
-    ),
+export const getTitle = cache(async (id: number): Promise<TitleDetail | null> => {
+  const row = await (await getDb()).first<Record<string, unknown>>(`SELECT t.*, s.slug ${CARD_JOIN} WHERE t.id = ?`, [id]);
+  return row ? parseTitle(row) : null;
+});
+
+/** Tags the page being rendered with title:{id} (an empty data-cache entry carries the tag). */
+export function tagTitle(id: number): Promise<unknown> {
+  return cachedQuery(["title-tag", id], [TAG.title(id)], 86400, async () => true);
+}
+
+export const getSeasons = cache(async (titleId: number): Promise<Season[]> =>
+  (await getDb()).all<Season>(
+    "SELECT season_number, name, overview, air_date, episode_count, poster_path FROM seasons WHERE title_id = ? ORDER BY season_number",
+    [titleId],
   ),
 );
 
 /** Recorded label changes (migrations/0007), newest first; see lib/domain/updates.ts. */
-export const getUpdates = cache((titleId: number): Promise<UpdateRow[]> =>
-  cachedQuery(["updates", titleId], [TAG.title(titleId)], 3600, async () =>
-    (await getDb()).all<UpdateRow>(
-      "SELECT label, source_time, seen_at FROM title_updates WHERE title_id = ? ORDER BY id DESC LIMIT 60",
-      [titleId],
-    ),
-  ),
+export const getUpdates = cache(async (titleId: number): Promise<UpdateRow[]> =>
+  (await getDb()).all<UpdateRow>("SELECT label, source_time, seen_at FROM title_updates WHERE title_id = ? ORDER BY id DESC LIMIT 60", [titleId]),
 );
 
 /**
@@ -287,12 +302,10 @@ export const getUpdates = cache((titleId: number): Promise<UpdateRow[]> =>
  * marker belong to season 1.
  */
 export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"): Promise<Line[]> => {
-  const rows = await cachedQuery(["lines", titleId], [TAG.title(titleId)], 1800, async () =>
-    (await getDb()).all<{ source_id: string; season_number: number | null; remarks: string | null; vod_time: string | null; play_from: string | null; play_url: string | null }>(
-      `SELECT source_id, season_number, remarks, vod_time, play_from, play_url FROM source_items
-       WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0`,
-      [titleId],
-    ),
+  const rows = await (await getDb()).all<{ source_id: string; season_number: number | null; remarks: string | null; vod_time: string | null; play_from: string | null; play_url: string | null }>(
+    `SELECT source_id, season_number, remarks, vod_time, play_from, play_url FROM source_items
+     WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0`,
+    [titleId],
   );
   return rows
     .filter((r) => getSource(r.source_id)) // retired sources are not offered as lines

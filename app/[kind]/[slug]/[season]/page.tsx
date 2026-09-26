@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { EpisodeLinks } from "@/components/EpisodeLinks";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
-import { getLines, getSeasons, type Season, type TitleDetail } from "@/lib/data/titles";
+import { getLines, getSeasons, tagTitle, type Season, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { seasonPath, titlePath, watchPath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
@@ -61,7 +61,7 @@ export default async function SeasonPage({ params }: PageProps<"/[kind]/[slug]/[
   if (!n) notFound();
   const t = await resolveTitleRoute(p, (canonical) => `${canonical}/s${n}`);
   if (t.tmdb_type !== "tv") notFound();
-  const [seasons, lines] = await Promise.all([getSeasons(t.id), getLines(t.id, t.tmdb_type)]);
+  const [seasons, lines] = await Promise.all([getSeasons(t.id), getLines(t.id, t.tmdb_type), tagTitle(t.id)]);
   const s = seasons.find((x) => x.season_number === n);
   if (!s) notFound();
   const seasonLines = lines.filter((l) => l.season === n);

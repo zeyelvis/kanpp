@@ -15,7 +15,7 @@ import { PosterRail } from "@/components/PosterRail";
 import { ScrollRail } from "@/components/ScrollRail";
 import { castOtherWorks, personSlugs } from "@/lib/data/people";
 import { lookupTitleForMetadata, resolveTitleRoute } from "@/lib/data/resolve-page";
-import { getLines, getSeasons, getUpdates, relatedTitles, type Line, type TitleDetail } from "@/lib/data/titles";
+import { getLines, getSeasons, getUpdates, relatedTitles, tagTitle, type Line, type TitleDetail } from "@/lib/data/titles";
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { countryLabel, formatRuntime, isNextEpisodeAhead, shortDate, tvStatusLabel } from "@/lib/domain/labels";
 import { personPath, playFragment, seasonPath, titlePath } from "@/lib/domain/slug";
@@ -121,6 +121,8 @@ export default async function TitlePage({ params }: PageProps<"/[kind]/[slug]">)
     relatedTitles(t, 18),
     personSlugs([...t.cast, ...t.crew].map((p) => p.id).filter((id): id is number => id != null)),
     getUpdates(t.id),
+    // The page's only tag: an ingest run that changes this title refreshes it.
+    tagTitle(t.id),
   ]);
   // One entry is only the state when recording began; a history needs a change after it.
   const timeline = updateTimeline(updates);
