@@ -152,6 +152,52 @@ async function workerAndD1(token: string, since: string, until: string) {
   };
 }
 
+async function analyticsSql<T>(token: string, sql: string): Promise<T[]> {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/analytics_engine/sql`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: sql,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`Analytics Engine: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return ((await res.json()) as { data: T[] }).data;
+}
+
+/**
+ * People's page views from our own counter (lib/edge/pageview.ts): what they open, where they
+ * come from (search engines and AI assistants are the SEO/GEO result), and AI agents reading
+ * the Markdown versions and llms.txt.
+ */
+async function visitors(token: string) {
+  const day = "timestamp > NOW() - INTERVAL '1' DAY";
+  const human = `${day} AND blob4 = 'human'`;
+  type Row = { key: string; n: string };
+  const [pages, sources, landings, agents, unknown] = await Promise.all([
+    analyticsSql<Row>(token, `SELECT blob1 AS key, SUM(_sample_interval) AS n FROM kanpp_pageviews WHERE ${human} GROUP BY key ORDER BY n DESC`),
+    analyticsSql<Row>(token, `SELECT blob5 AS key, SUM(_sample_interval) AS n FROM kanpp_pageviews WHERE ${human} AND blob3 = 'document' GROUP BY key ORDER BY n DESC`),
+    analyticsSql<{ ref: string; path: string; n: string }>(
+      token,
+      `SELECT blob5 AS ref, blob2 AS path, SUM(_sample_interval) AS n FROM kanpp_pageviews
+       WHERE ${human} AND (blob5 LIKE 'search:%' OR blob5 LIKE 'ai:%') GROUP BY ref, path ORDER BY n DESC LIMIT 10`,
+    ),
+    analyticsSql<Row>(token, `SELECT blob4 AS key, SUM(_sample_interval) AS n FROM kanpp_pageviews WHERE ${day} AND blob3 = 'agent' GROUP BY key ORDER BY n DESC`),
+    analyticsSql<{ n: string }>(token, `SELECT SUM(_sample_interval) AS n FROM kanpp_pageviews WHERE ${day} AND blob4 = 'unknown'`),
+  ]);
+  const num = (rows: Row[]) => rows.map((r) => ({ key: r.key, n: Number(r.n) }));
+  const byPage = num(pages);
+  const bySource = num(sources);
+  return {
+    pageViews: byPage.reduce((t, r) => t + r.n, 0),
+    byPage,
+    bySource,
+    fromSearch: bySource.filter((r) => r.key.startsWith("search:")).reduce((t, r) => t + r.n, 0),
+    fromAi: bySource.filter((r) => r.key.startsWith("ai:")).reduce((t, r) => t + r.n, 0),
+    landings: landings.map((r) => ({ source: r.ref, path: r.path, n: Number(r.n) })),
+    agentReads: num(agents),
+    unknownViews: Number(unknown[0]?.n ?? 0),
+  };
+}
+
 async function catalog() {
   const db = openDb(parseDbTarget(args.db));
   const [search, counts, published, updates, playback, sources] = await Promise.all([
@@ -270,6 +316,13 @@ async function bing(): Promise<Record<string, unknown> | null> {
 }
 
 const n = (x: number) => x.toLocaleString("en-US");
+const PAGE_LABEL: Record<string, string> = {
+  home: "首页", channel: "频道", title: "作品页", season: "分季页", person: "影人页", topic: "专题",
+  schedule: "放送表", search: "搜索", me: "我的", info: "说明页", markdown: "Markdown 版", llms: "llms.txt", other: "其他",
+};
+const SOURCE_LABEL = (key: string) =>
+  ({ direct: "直接访问", internal: "站内", other: "其他网站" })[key] ??
+  key.replace(/^search:/, "搜索·").replace(/^ai:/, "AI·").replace(/^social:/, "社交·");
 const pct = (x: number | null) => (x == null ? "—" : `${(x * 100).toFixed(1)}%`);
 
 async function main() {
@@ -280,12 +333,13 @@ async function main() {
   const token = cloudflareApiToken();
   const zone = await zoneId(token);
 
-  const [web, platform, cat, seo, bingStats] = await Promise.all([
+  const [web, platform, cat, seo, bingStats, people] = await Promise.all([
     traffic(token, zone, since, until),
     workerAndD1(token, since, until),
     catalog(),
     args["skip-seo"] ? Promise.resolve(null) : seoCheck(),
     bing(),
+    visitors(token).catch((err) => ({ error: String(err instanceof Error ? err.message : err) })),
   ]);
 
   const alerts: string[] = [];
@@ -303,7 +357,7 @@ async function main() {
   }
   if (seo && !seo.passed) alerts.push(`SEO 巡检未通过：${seo.summary.split("\n").slice(-3).join(" / ")}`);
 
-  const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, web, platform, catalog: cat, seo, bing: bingStats };
+  const report = { generatedAt: now.toISOString(), window: { since, until }, alerts, visitors: people, web, platform, catalog: cat, seo, bing: bingStats };
   // Only real reports are kept: a run against a local copy (--db) is just printed.
   if (args.db === "remote") {
     const dir = join(ROOT, "data/health");
@@ -317,6 +371,14 @@ async function main() {
   const lines = [
     `看片片健康报告 · 过去 24 小时（截至 ${until.replace("T", " ").slice(0, 16)} UTC）`,
     alerts.length ? `⚠ ${alerts.length} 项需要处理：\n${alerts.map((a) => `  - ${a}`).join("\n")}` : "✓ 没有需要处理的问题",
+    "error" in people
+      ? `访客统计：读取失败（${people.error}）`
+      : [
+          `访客（真人，不含爬虫）：打开页面 ${n(people.pageViews)} 次${people.byPage.length ? `（${people.byPage.slice(0, 5).map((r) => `${PAGE_LABEL[r.key] ?? r.key} ${n(r.n)}`).join("，")}）` : ""}`,
+          `  进站来源：${people.bySource.map((r) => `${SOURCE_LABEL(r.key)} ${n(r.n)}`).join("，") || "暂无"}；来自搜索引擎 ${n(people.fromSearch)}，来自 AI 助手 ${n(people.fromAi)}`,
+          ...(people.landings.length ? [`  搜索/AI 带来的落地页：${people.landings.slice(0, 5).map((l) => `${l.path}（${SOURCE_LABEL(l.source)} ${l.n}）`).join("，")}`] : []),
+          `  AI 智能体读取 Markdown / llms.txt：${people.agentReads.map((r) => `${r.key.replace(/^bot:/, "")} ${n(r.n)}`).join("，") || "暂无"}；身份不明的非浏览器访问 ${n(people.unknownViews)} 次`,
+        ].join("\n"),
     `访问：${n(web.requests)} 次请求，5xx ${n(web.errors5xx)} 次（${pct(errorRate)}）${w ? `；Worker CPU 中位数 ${w.cpuMsP50}ms / P99 ${w.cpuMsP99}ms，总耗时中位数 ${w.wallMsP50}ms` : ""}`,
     `爬虫：${web.crawlers.filter((c) => c.requests > 0).map((c) => `${c.label} ${n(c.requests)}${c.failed ? `（未成功 ${n(c.failed)}）` : ""}`).join("，") || "无"}`,
     `数据库：读取 ${n(platform.d1.rowsRead)} 行（${n(platform.d1.readQueries)} 次查询），写入 ${n(platform.d1.rowsWritten)} 行`,

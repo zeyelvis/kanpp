@@ -546,3 +546,50 @@ describe("update reminders", () => {
     expect(updateMessage([])).toBeNull();
   });
 });
+
+describe("page view counting", () => {
+  const req = (url: string, headers: Record<string, string>) => new Request(`https://kanpp.tv${url}`, { headers });
+  const browser = { "sec-fetch-dest": "document", "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148 Safari/604.1" };
+
+  it("groups pages and skips non-pages", async () => {
+    const { pageGroup } = await import("@/lib/edge/pageview");
+    expect(pageGroup("/")).toBe("home");
+    expect(pageGroup("/tv")).toBe("channel");
+    expect(pageGroup("/tv/%E7%B9%81%E8%8A%B1-2023")).toBe("title");
+    expect(pageGroup("/tv/x-2023/s2")).toBe("season");
+    expect(pageGroup("/tv/x-2023.md")).toBe("markdown");
+    expect(pageGroup("/person/x")).toBe("person");
+    expect(pageGroup("/topic/x")).toBe("topic");
+    expect(pageGroup("/llms.txt")).toBe("llms");
+    for (const p of ["/_next/static/a.js", "/img/w342/a.jpg", "/api/lines/1", "/sitemaps/titles-0.xml", "/robots.txt", "/icon-192.png", "/sw.js"]) {
+      expect(pageGroup(p)).toBeNull();
+    }
+  });
+
+  it("classifies where visits come from", async () => {
+    const { referrerClass } = await import("@/lib/edge/pageview");
+    expect(referrerClass(null, "kanpp.tv").cls).toBe("direct");
+    expect(referrerClass("https://www.google.com.hk/", "kanpp.tv").cls).toBe("search:google");
+    expect(referrerClass("https://gemini.google.com/", "kanpp.tv").cls).toBe("ai:gemini");
+    expect(referrerClass("https://chatgpt.com/", "kanpp.tv").cls).toBe("ai:chatgpt");
+    expect(referrerClass("https://www.perplexity.ai/", "kanpp.tv").cls).toBe("ai:perplexity");
+    expect(referrerClass("https://cn.bing.com/", "kanpp.tv").cls).toBe("search:bing");
+    expect(referrerClass("https://kanpp.tv/tv", "kanpp.tv").cls).toBe("internal");
+    expect(referrerClass("https://www.kanpp.tv/", "kanpp.tv").cls).toBe("internal");
+    expect(referrerClass("https://example.org/", "kanpp.tv")).toEqual({ cls: "other", host: "example.org" });
+  });
+
+  it("counts people and agents, not prefetches or crawlers reading HTML", async () => {
+    const { pageViewFor } = await import("@/lib/edge/pageview");
+    expect(pageViewFor(req("/tv/x-2023", { ...browser, referer: "https://www.google.com/" }))).toMatchObject({
+      group: "title", kind: "document", visitor: "human", refClass: "search:google", device: "mobile",
+    });
+    expect(pageViewFor(req("/tv/x-2023", { rsc: "1", "user-agent": browser["user-agent"] }))).toMatchObject({ kind: "rsc", refClass: "internal" });
+    expect(pageViewFor(req("/tv/x-2023", { rsc: "1", "next-router-prefetch": "1" }))).toBeNull();
+    expect(pageViewFor(req("/tv/x-2023", { "user-agent": "Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)" }))).toBeNull();
+    expect(pageViewFor(req("/tv/x-2023", { "user-agent": "kanpp-warm-cache" }))).toBeNull();
+    expect(pageViewFor(req("/tv/x-2023.md", { "user-agent": "Mozilla/5.0 (compatible; ClaudeBot/1.0)" }))).toMatchObject({ group: "markdown", kind: "agent", visitor: "bot:ClaudeBot" });
+    expect(pageViewFor(req("/person/x", { accept: "text/markdown", "user-agent": "Claude-User/1.0" }))).toMatchObject({ group: "markdown", visitor: "bot:Claude-User" });
+    expect(pageViewFor(req("/img/w342/a.jpg", browser))).toBeNull();
+  });
+});

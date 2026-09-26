@@ -63,6 +63,8 @@
       "new_sqlite_classes": ["DOQueueHandler"]
     }
   ],
+  // First-party page view counts (lib/edge/pageview.ts): no IP, no identifier.
+  "analytics_engine_datasets": [{ "binding": "PAGEVIEWS", "dataset": "kanpp_pageviews" }],
   // Per-visitor API limits (lib/edge/rate-limit.ts). namespace_id: any number unique in the account.
   "ratelimits": [
     { "name": "RL_BEACON", "namespace_id": "4201", "simple": { "limit": 20, "period": 60 } },
