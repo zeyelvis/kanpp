@@ -2,6 +2,7 @@ import type { Db } from "@/lib/db/types";
 import type { Kind } from "@/lib/domain/kinds";
 import { scoreMatch, type CandidateSignal, type MatchResult, type SourceSignal } from "@/lib/domain/match";
 import { cleanDisplayName, normalizeKey, splitPeople, stripGluedYear } from "@/lib/domain/normalize";
+import { matchConflict } from "@/lib/domain/match-guard";
 import { hasAdultSignal, isCommentary } from "@/lib/domain/safety";
 import { extractSeason, trailingSeason } from "@/lib/domain/season";
 import { classifyCategory } from "@/lib/sources/categories";
@@ -18,6 +19,7 @@ interface PendingRow {
   douban_id: string | null;
   actor: string | null;
   director: string | null;
+  episode_count: number | null;
 }
 
 type Outcome =
@@ -116,13 +118,16 @@ export class Resolver {
     const { signal, base } = sourceSignal(row, category);
     if (signal.keys.length === 0) return { status: "unmatched", note: "empty-name" };
 
-    // 1. A douban subject we have seen before is authoritative.
+    // 1. A douban subject we have seen before, unless the row is implausible for its title
+    //    (sources sometimes carry another work's douban id): then match by name instead.
     if (row.douban_id) {
       const ext = await this.db.first<{ title_id: number; season_number: number | null }>(
         "SELECT title_id, season_number FROM external_ids WHERE provider = 'douban' AND external_id = ?",
         [row.douban_id],
       );
-      if (ext) return { status: "matched", titleId: ext.title_id, season: ext.season_number ?? signal.season, score: 1, note: "douban" };
+      if (ext && !(await this.doubanConflict(ext.title_id, row, category, signal))) {
+        return { status: "matched", titleId: ext.title_id, season: ext.season_number ?? signal.season, score: 1, note: "douban" };
+      }
     }
 
     const outcome = await this.match(row, category, signal, base);
@@ -192,6 +197,16 @@ export class Resolver {
     return { status: "unmatched", score: reviewCand?.r.score, note: reviewCand ? `${reviewCand.note} ${reviewCand.r.reasons.join(" ")}` : `no-tmdb-hit q=${base}` };
   }
 
+  private async doubanConflict(titleId: number, row: PendingRow, category: { kind: Kind }, signal: SourceSignal): Promise<string | null> {
+    const t = await this.db.first<{ name: string; tmdb_type: TmdbType; year: number | null }>("SELECT name, tmdb_type, year FROM titles WHERE id = ?", [titleId]);
+    if (!t) return "no-title";
+    const aliases = await this.db.all<{ norm: string }>("SELECT norm FROM aliases WHERE title_id = ?", [titleId]);
+    return matchConflict(
+      { name: t.name, film: t.tmdb_type === "movie", year: t.year, keys: new Set(aliases.map((a) => a.norm)) },
+      { kind: category.kind, name: row.vod_name, keys: signal.keys, year: row.vod_year, episodes: row.episode_count },
+    );
+  }
+
   private async rememberDouban(doubanId: string | null, titleId: number, season: number | null) {
     if (!doubanId) return;
     await this.db.run(
@@ -202,7 +217,7 @@ export class Resolver {
 
   async resolvePending(options: { limit: number; concurrency?: number; onProgress?: (s: ResolveStats) => void }): Promise<ResolveStats> {
     const rows = await this.db.all<PendingRow>(
-      `SELECT source_id, vod_id, vod_name, vod_year, type_name, douban_id, actor, director
+      `SELECT source_id, vod_id, vod_name, vod_year, type_name, douban_id, actor, director, episode_count
        FROM source_items WHERE match_status = 'pending' ORDER BY vod_time DESC LIMIT ?`,
       [options.limit],
     );

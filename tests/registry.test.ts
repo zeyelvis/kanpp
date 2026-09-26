@@ -149,13 +149,25 @@ describe("resolver: trailing number as season", () => {
     return lastRowId!;
   }
 
-  const row = (vod_name: string, vod_year: number) => ({ source_id: "modu", vod_id: "1", vod_name, vod_year, type_name: "大陆剧", douban_id: null, actor: null, director: null });
+  const row = (vod_name: string, vod_year: number) => ({ source_id: "modu", vod_id: "1", vod_name, vod_year, type_name: "大陆剧", douban_id: null, actor: null, director: null, episode_count: null });
 
   it("reads 乡村爱情18 as season 18 when no work has that exact name", async () => {
     const db = freshDb();
     const id = await series(db, "乡村爱情", [[1, "2006-01-01"], [17, "2025-01-20"], [18, "2026-01-20"]]);
     const out = await new Resolver(db, noTmdb).resolveRow(row("乡村爱情18", 2026));
     expect(out).toMatchObject({ status: "matched", titleId: id, season: 18 });
+  });
+
+  it("does not trust a douban id that belongs to another work", async () => {
+    const db = freshDb();
+    const { lastRowId: film } = await db.run("INSERT INTO titles (kind, name, year, tmdb_type, tmdb_id) VALUES ('movie', '一线希望', 2025, 'movie', 99)");
+    await db.run("INSERT INTO aliases (title_id, norm, alias) VALUES (?, '一线希望', '一线希望')", [film]);
+    await db.run("INSERT INTO external_ids (provider, external_id, title_id) VALUES ('douban', '123', ?)", [film]);
+    const resolver = new Resolver(db, noTmdb);
+    const variety = { ...row("女人我最大2020", 2020), type_name: "港台综艺", douban_id: "123", episode_count: 254 };
+    expect(await resolver.resolveRow(variety)).toMatchObject({ status: "unmatched" });
+    const same = { ...row("一线希望", 2025), type_name: "剧情片", douban_id: "123", episode_count: 1 };
+    expect(await resolver.resolveRow(same)).toMatchObject({ status: "matched", titleId: film, note: "douban" });
   });
 
   it("prefers a work whose name really ends in the number", async () => {

@@ -593,3 +593,28 @@ describe("page view counting", () => {
     expect(pageViewFor(req("/img/w342/a.jpg", browser))).toBeNull();
   });
 });
+
+describe("douban match guard", () => {
+  const film = { name: "一线希望", film: true, year: 2025, keys: new Set(["一线希望"]) };
+  const row = (name: string, kind: "movie" | "tv" | "anime" | "variety" | "doc", year: number, episodes: number, keys = [name]) => ({ name, kind, keys, year, episodes });
+  it("keeps plausible douban matches", async () => {
+    const { matchConflict } = await import("@/lib/domain/match-guard");
+    expect(matchConflict(film, row("一线希望", "movie", 2025, 1))).toBeNull();
+    // A film in four versions, and a re-release year on an exact name.
+    expect(matchConflict(film, row("一线希望", "movie", 2019, 4))).toBeNull();
+    expect(matchConflict({ name: "小美人鱼", film: true, year: 2023, keys: new Set(["小美人鱼"]) }, row("小美人鱼2023", "movie", 2020, 1, ["小美人鱼2023"]))).toBeNull();
+    // Series titles are not checked: seasons carry other years and numbered names.
+    expect(matchConflict({ name: "种地吧", film: false, year: 2023, keys: new Set(["种地吧"]) }, row("种地吧4", "variety", 2026, 84))).toBeNull();
+    // A special TMDB files as a film; an animated film under a variant name in an anime category.
+    expect(matchConflict({ name: "天真无邪的乐园", film: true, year: 2014, keys: new Set(["天真无邪的乐园"]) }, row("天真无邪的乐园OAD", "anime", 2014, 3, ["天真无邪的乐园oad"]))).toBeNull();
+    expect(matchConflict({ name: "哪吒之灵珠重生", film: true, year: 2022, keys: new Set(["哪吒之灵珠重生"]) }, row("哪吒：灵珠重生", "anime", 2022, 1, ["哪吒灵珠重生"]))).toBeNull();
+  });
+  it("rejects another work's douban id", async () => {
+    const { matchConflict } = await import("@/lib/domain/match-guard");
+    expect(matchConflict(film, row("女人我最大2020", "variety", 2020, 254, ["女人我最大2020", "女人我最大"]))).toBe("film-with-254-episodes");
+    expect(matchConflict({ name: "母亲", film: true, year: 2009, keys: new Set(["母亲"]) }, row("母亲", "tv", 2009, 11))).toBe("film-with-11-episodes");
+    expect(matchConflict({ name: "误杀2", film: true, year: 2021, keys: new Set(["误杀2"]) }, row("误杀2 独家幕后记录", "doc", 2021, 1, ["误杀2独家幕后记录"]))).toBe("derivative-of-film");
+    expect(matchConflict(film, row("别的剧", "tv", 2025, 3))).toBe("series-row-on-film");
+    expect(matchConflict({ name: "龙珠Z剧场版2", film: true, year: 1990, keys: new Set(["龙珠z剧场版2世界最强的高手"]) }, row("龙珠Z剧场版16", "anime", 1996, 1, ["龙珠z剧场版16冥界超激战"]))).toBe("name-and-year-differ(1996/1990)");
+  });
+});
