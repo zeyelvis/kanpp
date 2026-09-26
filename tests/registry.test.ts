@@ -267,6 +267,28 @@ describe("IndexNow queue", () => {
     expect(await submitQueued(db, accept, ["/b", "/c"])).toBe("3 urls: 200");
     expect(sent[1]).toEqual(["/a", "/b", "/c"]);
     expect(await submitQueued(db, accept, [])).toBe("nothing to submit");
+    const viaBing = async (paths: string[]) => `${paths.length} urls: 200 via www.bing.com`;
+    await submitQueued(db, refuse, ["/d"]);
+    expect(await submitQueued(db, viaBing, [])).toBe("1 urls: 200 via www.bing.com");
+    expect(await submitQueued(db, accept, [])).toBe("nothing to submit");
+  });
+
+  it("sends a refused batch to the engines' own endpoints", async () => {
+    const { submitIndexNow } = await import("@/lib/seo/indexnow");
+    const calls: string[] = [];
+    const answer = (codes: Record<string, number>) =>
+      (async (url: string) => (calls.push(new URL(url).host), new Response(null, { status: codes[new URL(url).host] ?? 200 }))) as unknown as typeof fetch;
+    expect(await submitIndexNow(["/a"], answer({ "api.indexnow.org": 429 }), 0)).toBe("1 urls: 200 via www.bing.com");
+    expect(calls).toEqual(["api.indexnow.org", "www.bing.com"]);
+    calls.length = 0;
+    expect(await submitIndexNow(["/a"], answer({}), 0)).toBe("1 urls: 200");
+    expect(await submitIndexNow(["/a"], answer({ "api.indexnow.org": 429, "www.bing.com": 429, "yandex.com": 429 }), 0)).toBe("1 urls: 429");
+    calls.length = 0;
+    expect(await submitIndexNow(["/a"], answer({ "api.indexnow.org": 403 }), 0)).toBe("1 urls: 403");
+    expect(calls).toEqual(["api.indexnow.org"]);
+    calls.length = 0;
+    expect(await submitIndexNow(["/a"], answer({ "api.indexnow.org": 503 }), 0)).toBe("1 urls: 200 via www.bing.com");
+    expect(calls).toEqual(["api.indexnow.org", "api.indexnow.org", "www.bing.com"]);
   });
 });
 

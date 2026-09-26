@@ -63,8 +63,8 @@ export async function submitQueued(db: Db, submit: (paths: string[]) => Promise<
   const all = [...new Set([...queued, ...paths])].slice(-MAX_QUEUED);
   if (all.length === 0) return "nothing to submit";
   const result = await submit(all);
-  // "N urls: 200,202" when every batch was accepted; "skipped (...)" off production.
-  const delivered = /^skipped/.test(result) || /: (2\d\d,?)+$/.test(result);
+  // "N urls: 200,202 [via host]" when every batch was accepted; "skipped (...)" off production.
+  const delivered = /^skipped/.test(result) || /: (2\d\d,?)+( via \S+)?$/.test(result);
   await db.run(
     "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
     [INDEXNOW_QUEUE, delivered ? "" : JSON.stringify(all)],
