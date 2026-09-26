@@ -122,7 +122,7 @@ async function workerAndD1(token: string, since: string, until: string) {
   const database = process.env.D1_DATABASE_ID!;
   const query = `query($a:String!,$s:Time!,$u:Time!,$db:String!){viewer{accounts(filter:{accountTag:$a}){
     worker: workersInvocationsAdaptive(limit:1,filter:{scriptName:"${SCRIPT}",datetime_geq:$s,datetime_leq:$u}){
-      sum{requests errors} quantiles{cpuTimeP50 cpuTimeP99 wallTimeP50 wallTimeP99}}
+      sum{requests errors} quantiles{cpuTimeP50 cpuTimeP99 wallTimeP50 wallTimeP90 wallTimeP99}}
     d1: d1AnalyticsAdaptiveGroups(limit:1,filter:{databaseId:$db,datetimeHour_geq:$s,datetimeHour_leq:$u}){
       sum{readQueries writeQueries rowsRead rowsWritten}}
     queries: d1QueriesAdaptiveGroups(limit:12,filter:{databaseId:$db,datetime_geq:$s,datetime_leq:$u},orderBy:[sum_rowsRead_DESC]){
@@ -145,6 +145,7 @@ async function workerAndD1(token: string, since: string, until: string) {
           cpuMsP50: ms(w.quantiles.cpuTimeP50),
           cpuMsP99: ms(w.quantiles.cpuTimeP99),
           wallMsP50: ms(w.quantiles.wallTimeP50),
+          wallMsP90: ms(w.quantiles.wallTimeP90),
           wallMsP99: ms(w.quantiles.wallTimeP99),
         }
       : null,
@@ -420,7 +421,7 @@ async function main() {
           ...(people.landings.length ? [`  搜索/AI 带来的落地页：${people.landings.slice(0, 5).map((l) => `${l.path}（${SOURCE_LABEL(l.source)} ${l.n}）`).join("，")}`] : []),
           `  AI 智能体读取 Markdown / llms.txt：${people.agentReads.map((r) => `${r.key.replace(/^bot:/, "")} ${n(r.n)}`).join("，") || "暂无"}；身份不明的非浏览器访问 ${n(people.unknownViews)} 次`,
         ].join("\n"),
-    `访问：${n(web.requests)} 次请求，5xx ${n(web.errors5xx)} 次（${pct(errorRate)}）${w ? `；Worker CPU 中位数 ${w.cpuMsP50}ms / P99 ${w.cpuMsP99}ms，总耗时中位数 ${w.wallMsP50}ms` : ""}`,
+    `访问：${n(web.requests)} 次请求，5xx ${n(web.errors5xx)} 次（${pct(errorRate)}）${w ? `；Worker CPU 中位数 ${w.cpuMsP50}ms / P99 ${w.cpuMsP99}ms，总耗时中位数 ${w.wallMsP50}ms / P90 ${w.wallMsP90}ms / P99 ${w.wallMsP99}ms` : ""}`,
     `最常被请求的 404：${web.top404.map((g) => `${safeDecode(g.path)} ×${g.count}`).join("，") || "无"}`,
     `爬虫：${web.crawlers.filter((c) => c.requests > 0).map((c) => `${c.label} ${n(c.requests)}${c.failed ? `（未成功 ${n(c.failed)}）` : ""}`).join("，") || "无"}`,
     `数据库：读取 ${n(platform.d1.rowsRead)} 行（${n(platform.d1.readQueries)} 次查询），写入 ${n(platform.d1.rowsWritten)} 行`,
