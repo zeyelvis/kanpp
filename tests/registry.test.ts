@@ -256,6 +256,39 @@ describe("catalog lease", () => {
   });
 });
 
+describe("update reminders", () => {
+  it("only look at followed titles and always move the cursor", async () => {
+    const { runPushUpdates } = await import("@/lib/ingest/push-job");
+    const db = freshDb();
+    await db.run("INSERT INTO sync_state (key, value) VALUES ('push:last_update_id', '0')");
+    // A bulk load's worth of new labels on titles nobody follows.
+    for (let i = 1; i <= 50; i++) await db.run("INSERT INTO title_updates (title_id, label) VALUES (?, '第2集')", [1000 + i]);
+    const logs: string[] = [];
+    const vapid = { subject: "https://kanpp.tv", publicKey: "x", privateKey: "y" };
+    const result = await runPushUpdates({ db, log: (...p: unknown[]) => logs.push(p.join(" ")) } as never, vapid);
+    expect(result).toEqual({ sent: 0, gone: 0, failed: 0 });
+    expect(logs.join("\n")).toContain("0 followed titles with new labels");
+    expect((await db.first<{ value: string }>("SELECT value FROM sync_state WHERE key = 'push:last_update_id'"))?.value).toBe("50");
+  });
+});
+
+describe("site notifications", () => {
+  it("send titles in chunks and the ones with a new episode once", async () => {
+    const { siteNotifier } = await import("@/lib/ingest/notify");
+    const bodies: { titleIds: number[]; freshIds: number[]; created: boolean; catalog: boolean }[] = [];
+    const notify = siteNotifier({
+      base: "https://kanpp.tv",
+      secret: "s",
+      fetcher: async (_url, init) => (bodies.push(JSON.parse(String(init.body))), new Response("{}")),
+    });
+    const ids = Array.from({ length: 1500 }, (_, i) => i + 1);
+    await notify({ titleIds: ids, freshIds: [3, 1200], created: true, catalog: true });
+    expect(bodies.map((b) => b.titleIds.length)).toEqual([1000, 500]);
+    expect(bodies.map((b) => b.freshIds)).toEqual([[3, 1200], []]);
+    expect(bodies.map((b) => [b.created, b.catalog])).toEqual([[true, true], [false, false]]);
+  });
+});
+
 describe("IndexNow queue", () => {
   it("keeps paths the endpoint refused and sends them with the next run", async () => {
     const { submitQueued } = await import("@/lib/ingest/notify");

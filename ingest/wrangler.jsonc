@@ -11,7 +11,7 @@
   "workers_dev": true,
   "preview_urls": false,
   // Every 4 hours; intervals of an hour or more give each run up to 15 minutes.
-  "triggers": { "crons": ["5 */4 * * *", "25 */4 * * *", "45 */4 * * *"] },
+  "triggers": { "crons": ["35 * * * *", "5 */4 * * *", "25 */4 * * *", "45 */4 * * *"] },
   "limits": { "cpu_ms": 300000 },
   "d1_databases": [
     {

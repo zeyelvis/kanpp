@@ -4,6 +4,8 @@ import { titlePath } from "@/lib/domain/slug";
 
 export interface RevalidatePayload {
   titleIds: number[];
+  /** Of those, titles with a new episode (or newly published): their pages expire at once. */
+  freshIds?: number[];
   created: boolean;
   catalog: boolean;
 }
@@ -24,7 +26,12 @@ export function siteNotifier(opts: { base: string; secret: string | undefined; f
       const res = await fetcher(`${opts.base}/api/revalidate`, {
         method: "POST",
         headers: { Authorization: `Bearer ${opts.secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ titleIds: chunk, created: first && payload.created, catalog: first && payload.catalog }),
+        body: JSON.stringify({
+          titleIds: chunk,
+          freshIds: first ? (payload.freshIds ?? []).slice(0, 1000) : [],
+          created: first && payload.created,
+          catalog: first && payload.catalog,
+        }),
       });
       results.push(`${res.status}`);
       await res.body?.cancel();

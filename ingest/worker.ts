@@ -1,11 +1,14 @@
 /**
  * kanpp-ingest: the catalog's scheduled jobs, run by Cloudflare instead of a machine that may
  * be asleep. Same code as the scripts (lib/ingest/*), with the D1 binding and the site's
- * service binding. Three cron jobs every 4 hours, each with its own time and request budget:
+ * service binding. Cron jobs, each with its own time and request budget:
  *
- *   catalog  sources' recent updates and backfill pages -> matching -> publish gate -> people
- *   series   TMDB refresh of airing series -> publish gate -> people
- *   extras   titles from source metadata (Chinese animation/variety), then update reminders
+ *   updates  hourly: the last 2 hours of every source -> matching -> publish gate -> pages with a
+ *            new episode re-rendered -> search engines -> update reminders
+ *   catalog  every 4 hours: recent updates and backfill pages -> matching -> publish gate ->
+ *            catalog/topic counts -> people
+ *   series   every 4 hours: TMDB refresh of airing series -> publish gate -> people
+ *   extras   every 4 hours: titles from source metadata (Chinese animation/variety)
  *
  * Every job holds the catalog lease (lib/ingest/lease.ts) and skips while another job, a
  * script, or a checked-out mirror holds it. Results go to sync_state "job:{name}" (the health
@@ -53,10 +56,12 @@ interface RunOptions {
   limit?: number;
 }
 
-type JobName = "catalog" | "series" | "extras";
+type JobName = "updates" | "catalog" | "series" | "extras";
 
-// Must match "triggers.crons" in ingest/wrangler.jsonc.
+// Must match "triggers.crons" in ingest/wrangler.jsonc. Staggered so no job waits on another's
+// lease: catalog :05 (up to ~6 min), series :25 (~4 min), updates :35 (~2 min), extras :45.
 const SCHEDULE: Record<string, JobName> = {
+  "35 * * * *": "updates",
   "5 */4 * * *": "catalog",
   "25 */4 * * *": "series",
   "45 */4 * * *": "extras",
@@ -82,13 +87,17 @@ async function runJob(env: Env, job: JobName, log: (...parts: unknown[]) => void
   try {
     const limit = opts.limit ?? 2000;
     // Without a TMDB key every lookup fails and pending rows would be marked unmatched for good.
-    const needsTmdb = job === "series" || (job === "catalog" && limit > 0);
+    const needsTmdb = job === "series" || ((job === "catalog" || job === "updates") && limit > 0);
     const missing = needsTmdb && !env.TMDB_API_KEY ? "TMDB_API_KEY" : ctx.announce && !env.REVALIDATE_SECRET ? "REVALIDATE_SECRET" : null;
     const result = missing ? `missing ${missing}` : await withLease(db, `worker:${job}:${crypto.randomUUID()}`, 20, async () => {
+      const vapid = env.VAPID_PRIVATE_KEY ? { subject: site.url, publicKey: VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY } : null;
+      if (job === "updates") {
+        const ingest = await runIngest(ctx, tmdb, { hours: opts.hours ?? 2, limit: opts.limit ?? 500, concurrency: 4, light: true });
+        return { ...ingest, reminders: await runPushUpdates(ctx, vapid) };
+      }
       if (job === "catalog") return runIngest(ctx, tmdb, { hours: opts.hours ?? 5, backfill: opts.backfill ?? 5, limit, concurrency: 4 });
       if (job === "series") return runIngest(ctx, tmdb, { refreshSeries: 300, limit: 0, concurrency: 4, resolveOnly: true });
-      const vapid = env.VAPID_PRIVATE_KEY ? { subject: site.url, publicKey: VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY } : null;
-      return { sourceTitles: await runSourceTitles(ctx), reminders: await runPushUpdates(ctx, vapid) };
+      return { sourceTitles: await runSourceTitles(ctx) };
     });
     record =
       result === null ? { ok: true, skipped: "lease held or mirror checked out" } : typeof result === "string" ? { ok: true, skipped: result } : { ok: true, summary: result };

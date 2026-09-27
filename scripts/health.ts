@@ -390,12 +390,13 @@ async function main() {
       alerts.push(`${c.label} 的请求有 ${pct(c.failed / c.requests)} 未成功（共 ${n(c.requests)} 次，其中 404 ${n(c.notFound)} 次）`);
     }
   }
-  // The ingest Worker's jobs (ingest/worker.ts) run every 4 hours.
+  // The ingest Worker's jobs (ingest/worker.ts): updates hourly, the others every 4 hours.
   for (const j of cat.jobs) {
     const hours = (Date.now() - Date.parse(j.startedAt.includes("T") ? j.startedAt : `${j.startedAt.replace(" ", "T")}Z`)) / 3600_000;
     if (!j.ok) alerts.push(`入库任务 ${j.job} 上次失败：${j.error}`);
     else if (j.skipped && j.skipped !== "lease held or mirror checked out") alerts.push(`入库任务 ${j.job} 被跳过：${j.skipped}`);
-    else if (hours > 9) alerts.push(`入库任务 ${j.job} 已 ${Math.round(hours)} 小时没有运行`);
+    // The hourly updates job; the others run every 4 hours.
+    else if (hours > (j.job === "updates" ? 3 : 9)) alerts.push(`入库任务 ${j.job} 已 ${Math.round(hours)} 小时没有运行`);
   }
   for (const o of cat.copyright.open) {
     if (o.hoursOpen >= 24) alerts.push(`版权通知 #${o.id}（${o.sender}）已等待 ${o.hoursOpen} 小时未处理：npx tsx scripts/takedown.ts list`);

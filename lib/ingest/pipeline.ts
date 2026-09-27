@@ -45,7 +45,15 @@ export interface IngestOptions {
   fetchOnly?: boolean;
   /** Re-run the publish gate for the whole catalog. */
   republish?: boolean;
+  /**
+   * The hourly run: new episodes and titles only. Catalog and topic counts and people are
+   * recomputed by the 4-hourly runs (each is a full catalog scan).
+   */
+  light?: boolean;
 }
+
+/** Title pages with a new episode (or newly published) re-rendered right after a run. */
+const WARM_PAGES = 100;
 
 async function fetchPages(db: Db, source: CmsSource, from: number, count: number, hours: number | undefined, touched: Set<number>) {
   let written = 0;
@@ -61,6 +69,25 @@ async function fetchPages(db: Db, source: CmsSource, from: number, count: number
     stats.touchedTitleIds.forEach((id) => touched.add(id));
   }
   return { written, skipped, nextPage: page, pageCount };
+}
+
+/**
+ * Requests pages once so the first visitor or crawler after a new episode gets the new page
+ * from the cache instead of waiting for it to render. Returns "{ok}/{n}".
+ */
+async function warmPages(ctx: JobContext, paths: string[]): Promise<string> {
+  const queue = [...paths];
+  let ok = 0;
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      for (let path = queue.shift(); path; path = queue.shift()) {
+        const res = await ctx.siteFetch(path).catch(() => null);
+        await res?.body?.cancel();
+        if (res?.ok) ok++;
+      }
+    }),
+  );
+  return `${ok}/${paths.length}`;
 }
 
 /**
@@ -132,18 +159,25 @@ export async function runIngest(ctx: JobContext, tmdb: TmdbClient | null, opts: 
   const published = await refreshTitles(db, touched);
   log(`publish gate: refreshed ${published.refreshed}, indexable ${published.indexable}`);
   summary.published = { refreshed: published.refreshed, changed: published.changed.length };
-  log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
-  log(`topic counts: ${await storeTopicCounts(db)} topics`);
-  const people = await refreshPeople(db);
-  log(`people: ${JSON.stringify({ ...people, published: people.published.length })}`);
-  // New person slugs may have been cached as 404s, like new titles.
-  created ||= people.slugged > 0;
+  let people: Awaited<ReturnType<typeof refreshPeople>> = { changed: 0, slugged: 0, indexable: 0, published: [] };
+  if (!opts.light) {
+    log(`catalog: ${JSON.stringify(await storeCatalogCounts(db))}`);
+    log(`topic counts: ${await storeTopicCounts(db)} topics`);
+    people = await refreshPeople(db);
+    log(`people: ${JSON.stringify({ ...people, published: people.published.length })}`);
+    // New person slugs may have been cached as 404s, like new titles.
+    created ||= people.slugged > 0;
+  }
 
   if (ctx.announce) {
-    summary.revalidate = await ctx.notifySite({ titleIds: [...touched], created, catalog: true });
-    summary.indexnow = await submitQueued(db, ctx.submitIndexNow, [...people.published.map(personPath), ...(await titlePaths(db, published.changed))]);
+    const changedPaths = await titlePaths(db, published.changed);
+    // Pages with a new episode expire now instead of being served stale once more.
+    summary.revalidate = await ctx.notifySite({ titleIds: [...touched], freshIds: published.changed, created, catalog: true });
+    summary.indexnow = await submitQueued(db, ctx.submitIndexNow, [...people.published.map(personPath), ...changedPaths]);
+    summary.warmed = await warmPages(ctx, changedPaths.slice(0, WARM_PAGES));
     log(`revalidate: ${summary.revalidate}`);
     log(`indexnow: ${summary.indexnow}`);
+    log(`warmed: ${summary.warmed}`);
   }
   return summary;
 }

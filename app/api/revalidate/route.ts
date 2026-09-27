@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 interface Body {
   /** Titles whose record, seasons or lines changed. */
   titleIds?: number[];
+  /** Titles with a new episode (or newly published): expire now, not stale-while-revalidate. */
+  freshIds?: number[];
   /** New titles (or slugs) were created: drop cached slug lookups, including cached 404s. */
   created?: boolean;
   /** Lists, counts and sitemaps changed. */
@@ -25,11 +27,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await req.json().catch(() => ({}))) as Body;
-  const ids = [...new Set((body.titleIds ?? []).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 5000);
-  // Title data: serve stale while the next visit refreshes it.
-  for (const id of ids) revalidateTag(TAG.title(id), "max");
+  const valid = (list: number[] | undefined) => [...new Set((list ?? []).filter((n) => Number.isInteger(n) && n > 0))];
+  const fresh = new Set(valid(body.freshIds).slice(0, 1000));
+  const ids = valid(body.titleIds).slice(0, 5000);
+  // New episode: the next request renders the new page (the ingest job requests it right away).
+  for (const id of fresh) revalidateTag(TAG.title(id), { expire: 0 });
+  // Other changes (a line's URLs, a poster): serve stale while the next visit refreshes it.
+  for (const id of ids) if (!fresh.has(id)) revalidateTag(TAG.title(id), "max");
   // Slug lookups: expire now, so a title that was a cached 404 appears on the next request.
   if (body.created) revalidateTag(TAG.slugs, { expire: 0 });
   if (body.catalog) revalidateTag(TAG.catalog, "max");
-  return Response.json({ ok: true, titles: ids.length, created: Boolean(body.created), catalog: Boolean(body.catalog) });
+  return Response.json({ ok: true, titles: ids.length, fresh: fresh.size, created: Boolean(body.created), catalog: Boolean(body.catalog) });
 }

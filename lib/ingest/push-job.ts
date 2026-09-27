@@ -32,7 +32,20 @@ export async function runPushUpdates(ctx: JobContext, vapid: VapidKeys | null, o
     return { sent: 0 };
   }
   const since = Number(cursorRow.value);
-  const changed = await db.all<{ title_id: number }>("SELECT DISTINCT title_id FROM title_updates WHERE id > ?", [since]);
+  // Only followed titles matter: after a bulk load tens of thousands of titles have new
+  // labels, and checking each one ran past the Worker's time limit before the cursor moved.
+  const subs = await db.all<{ endpoint: string; p256dh: string; auth: string; follows: string }>("SELECT endpoint, p256dh, auth, follows FROM push_subscriptions");
+  const followed = [...new Set(subs.flatMap((sub) => JSON.parse(sub.follows) as number[]))].filter((id) => Number.isInteger(id));
+  const changed: { title_id: number }[] = [];
+  for (let i = 0; i < followed.length; i += 90) {
+    const ids = followed.slice(i, i + 90);
+    changed.push(
+      ...(await db.all<{ title_id: number }>(
+        `SELECT DISTINCT title_id FROM title_updates WHERE id > ? AND title_id IN (${ids.map(() => "?").join(",")})`,
+        [since, ...ids],
+      )),
+    );
+  }
 
   // A title counts when its update history moved forward (a new episode, a finish), not when
   // sources merely relabelled the same episode.
@@ -52,13 +65,12 @@ export async function runPushUpdates(ctx: JobContext, vapid: VapidKeys | null, o
     );
     if (t) updates.set(title_id, { name: t.name, label: rows[0].label, path: titlePath(t.kind, t.slug) });
   }
-  log(`${changed.length} titles with new labels since #${since}, ${updates.size} moved forward`);
+  log(`${changed.length} followed titles with new labels since #${since}, ${updates.size} moved forward`);
 
   let sent = 0;
   let gone = 0;
   let failed = 0;
   if (updates.size) {
-    const subs = await db.all<{ endpoint: string; p256dh: string; auth: string; follows: string }>("SELECT endpoint, p256dh, auth, follows FROM push_subscriptions");
     for (const sub of subs) {
       const message = updateMessage((JSON.parse(sub.follows) as number[]).map((id) => updates.get(id)).filter((u) => u != null));
       if (!message) continue;
