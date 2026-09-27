@@ -4,6 +4,7 @@
  * a local SQLite file is bound only by TMDB and the CMS sources.
  *
  *   npx tsx scripts/mirror.ts pull            export remote D1 -> data/mirror/kanpp.sqlite + snapshot, take the lock
+ *   npx tsx scripts/mirror.ts pull --from-dump   finish a pull whose export downloaded but did not load
  *   npx tsx scripts/ingest.ts --db=file:data/mirror/kanpp.sqlite ...
  *   npx tsx scripts/mirror.ts push --dry-run  show what would be pushed
  *   npx tsx scripts/mirror.ts push [--keep]   upsert rows changed since the snapshot, notify the site,
@@ -18,7 +19,7 @@
  * paused (SIGSTOP) during a push and resumed after it.
  */
 import { execFileSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
@@ -62,6 +63,8 @@ const { values: args, positionals } = parseArgs({
     keep: { type: "boolean", default: false },
     // Mid-run pushes: leave rows still waiting to be resolved for a later push.
     "skip-pending": { type: "boolean", default: false },
+    // The lock is held and remote.sql is complete: only load it (nothing has written remote since).
+    "from-dump": { type: "boolean", default: false },
   },
 });
 
@@ -87,6 +90,11 @@ function counts(db: DatabaseSync, schema = "main") {
 }
 
 async function pull() {
+  const dump = join(DIR, "remote.sql");
+  if (args["from-dump"]) {
+    if (!existsSync(LOCK) || !existsSync(dump)) throw new Error("--from-dump needs the lock and data/mirror/remote.sql from an interrupted pull");
+    return load(dump);
+  }
   if (existsSync(LOCK)) throw new Error(`${LOCK} exists: a mirror is already checked out (push it first)`);
   if (ingestRunning("scripts/ingest.ts --db=remote")) throw new Error("a remote ingest run is active: wait for it to finish");
   // The ingest Worker's jobs check this flag before taking the catalog lease: set it first,
@@ -104,12 +112,17 @@ async function pull() {
   mkdirSync(DIR, { recursive: true });
   // Lock first so the scheduler stops writing before the export starts.
   closeSync(openSync(LOCK, "w"));
-  const dump = join(DIR, "remote.sql");
   log("exporting remote D1");
   wrangler(["d1", "export", DB_NAME, "--remote", `--output=${dump}`]);
+  load(dump);
+}
+
+function load(dump: string) {
   for (const f of [MIRROR, `${MIRROR}-wal`, `${MIRROR}-shm`, SNAPSHOT]) rmSync(f, { force: true });
+  // The sqlite3 shell streams the file: past ~512 MB it no longer fits in one JS string.
+  log("loading the export");
+  execFileSync("sqlite3", [MIRROR, `.read ${dump}`], { stdio: "inherit" });
   const db = new DatabaseSync(MIRROR);
-  db.exec(readFileSync(dump, "utf8"));
   db.exec(`VACUUM INTO '${SNAPSHOT}'`);
   log(`mirror ready: ${JSON.stringify(counts(db))}`);
   db.close();
