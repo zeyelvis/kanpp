@@ -19,6 +19,8 @@ export interface HotSpec {
   current?: boolean;
   /** Series: new progress (an episode, a finish) within this many days. */
   activeDays?: number;
+  /** Series: not finished yet (long-running ones like 仙逆 or 名侦探柯南 first aired years ago). */
+  airing?: boolean;
   /** Films: released within this many days. */
   releasedDays?: number;
 }
@@ -39,6 +41,9 @@ function heatFilter(spec: HotSpec, exclude: number[]): { sql: string; params: (s
   }
   if (spec.activeDays) {
     clauses.push(`t.source_updated_at >= datetime('now', '-${spec.activeDays} days')`);
+  }
+  if (spec.airing) {
+    clauses.push("NOT (IFNULL(t.latest_label, '') LIKE '%完结%' OR IFNULL(t.latest_label, '') LIKE '%全%集%' OR IFNULL(t.latest_label, '') LIKE '%集全%')");
   }
   if (spec.releasedDays) {
     clauses.push(`t.release_date >= date('now', '-${spec.releasedDays} days')`);
@@ -126,11 +131,11 @@ export const SECTIONS = {
   },
   anime: {
     tabs: [
-      { label: "国漫", spec: { kinds: ["anime"], regions: ["CN"], current: true, activeDays: 30 } },
-      { label: "日漫新番", spec: { list: "tv:日本动画", kinds: ["anime"], regions: ["JP"], current: true, activeDays: 30 } },
+      { label: "国漫", spec: { kinds: ["anime"], regions: ["CN"], airing: true, activeDays: 14 } },
+      { label: "日漫新番", spec: { list: "tv:日本动画", kinds: ["anime"], regions: ["JP"], airing: true, activeDays: 14 } },
     ],
-    // Douban has no list for Chinese animation: the catalog's heat, 国漫 and 日漫 only.
-    chart: { kinds: ["anime"], regions: ["CN", "JP"], current: true, activeDays: 30 },
+    // Douban has no list for Chinese animation: the catalog's heat, 国漫 and 日漫 airing now.
+    chart: { kinds: ["anime"], regions: ["CN", "JP"], airing: true, activeDays: 14 },
   },
   variety: {
     tabs: [
