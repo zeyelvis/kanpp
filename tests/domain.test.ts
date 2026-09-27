@@ -764,3 +764,37 @@ describe("巨量 rows", () => {
     expect(classifyCategory("电视电影")).toEqual({ kind: "movie", tmdbType: "movie" });
   });
 });
+
+describe("source progress", () => {
+  const row = (remarks: string | null, vod_time: string | null, season_number: number | null = null) => ({ remarks, vod_time, season_number });
+
+  it("shows the furthest progress, however recent the lagging lines' uploads", async () => {
+    const { sourceProgress } = await import("@/lib/domain/labels");
+    const p = sourceProgress([
+      row("更新至第12集", "2026-09-27 20:05:00"),
+      row("第12集", "2026-09-27 20:30:00"),
+      row("第10集", "2026-09-28 09:00:00"), // 巨量 re-uploading an older episode
+    ]);
+    expect(p).toEqual({ label: "第12集", since: "2026-09-27 20:05:00" });
+  });
+
+  it("puts a later season and a finish ahead of more episodes", async () => {
+    const { sourceProgress } = await import("@/lib/domain/labels");
+    expect(sourceProgress([row("全24集", "2026-09-01 10:00:00", 1), row("更新至第3集", "2026-09-20 10:00:00", 2)]).label).toBe("更新至第3集");
+    expect(sourceProgress([row("第40集", "2026-09-20 10:00:00"), row("全40集", "2026-09-21 10:00:00")]).label).toBe("全40集");
+  });
+
+  it("gives films the time the first source had them", async () => {
+    const { sourceProgress } = await import("@/lib/domain/labels");
+    expect(sourceProgress([row("HD中字", "2026-09-20 10:00:00"), row("正片", "2026-09-27 08:00:00")])).toEqual({ label: "正片", since: "2026-09-20 10:00:00" });
+    expect(sourceProgress([])).toEqual({ label: null, since: null });
+  });
+
+  it("tells a relabel from progress", async () => {
+    const { sameProgress } = await import("@/lib/domain/labels");
+    expect(sameProgress("更新至第12集", "第12集")).toBe(true);
+    expect(sameProgress("第12集", "第13集")).toBe(false);
+    expect(sameProgress("第40集", "全40集")).toBe(false);
+    expect(sameProgress("HD", "正片")).toBe(true);
+  });
+});

@@ -10,6 +10,7 @@
  *   npx tsx scripts/mirror.ts push [--keep]   upsert rows changed since the snapshot, notify the site,
  *                                             release the lock (--keep: keep it and re-snapshot)
  *   npx tsx scripts/mirror.ts push --keep --skip-pending   mid-run push of what is resolved so far
+ *   npx tsx scripts/mirror.ts push --no-announce    a data correction: refresh the site, tell no search engine
  *
  * While the lock exists nothing else may write remote D1 (ops/run-ingest.sh checks the file, the
  * ingest Worker the "mirror:checkout" flag in sync_state): new
@@ -65,6 +66,8 @@ const { values: args, positionals } = parseArgs({
     "skip-pending": { type: "boolean", default: false },
     // The lock is held and remote.sql is complete: only load it (nothing has written remote since).
     "from-dump": { type: "boolean", default: false },
+    // Corrections (recomputed labels, dates) are not new content: no IndexNow submission.
+    "no-announce": { type: "boolean", default: false },
   },
 });
 
@@ -283,7 +286,8 @@ async function pushPaused() {
   const updated = changedTitleIds.filter((id) => id <= snapMaxId);
   log(`revalidate: ${await notifySite({ titleIds: updated, created: mirrorMaxId > snapMaxId, catalog: true })}`);
   // Announcing is best effort: the data is already live, the lock must still be released.
-  log(`indexnow: ${await announceTitles(remote, announce, announcePeople).catch((err: unknown) => `failed (${err instanceof Error ? err.message : err})`)}`);
+  if (args["no-announce"]) log(`indexnow: skipped (--no-announce; ${announce.length} titles changed)`);
+  else log(`indexnow: ${await announceTitles(remote, announce, announcePeople).catch((err: unknown) => `failed (${err instanceof Error ? err.message : err})`)}`);
 
   db.exec("DETACH snap");
   if (args.keep) {

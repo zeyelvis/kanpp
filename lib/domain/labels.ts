@@ -45,6 +45,43 @@ export function episodeProgress(label: string | null | undefined): { finished: b
   return { finished: Boolean(label && FINISHED_LABEL.test(label)), episodes: latestEpisodeNumber(label) };
 }
 
+export interface SourceLabel {
+  remarks: string | null;
+  /** The source's update time, Beijing time. */
+  vod_time: string | null;
+  season_number: number | null;
+}
+
+/**
+ * What a title's page shows as its progress, from its playable source rows: the furthest one
+ * (latest season, then finished, then most episodes), so a line that lags behind never pulls
+ * the page back to an older episode; and `since`, when the sources first reached it. `since`
+ * only moves when progress does: a source re-uploading an episode it already had (巨量 does
+ * this all day) is not an update, for the sitemaps' lastmod, the page's date or the feeds.
+ * Films carry no progress: `since` is when the first source had them.
+ */
+export function sourceProgress(rows: SourceLabel[]): { label: string | null; since: string | null } {
+  if (rows.length === 0) return { label: null, since: null };
+  const rank = (r: SourceLabel) => {
+    const p = episodeProgress(r.remarks);
+    return [r.season_number ?? 1, p.finished ? 1 : 0, p.episodes ?? -1];
+  };
+  const compare = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  const best = rows.map(rank).reduce((m, r) => (compare(r, m) > 0 ? r : m));
+  const top = rows.filter((r) => compare(rank(r), best) === 0);
+  const times = top.map((r) => r.vod_time).filter((v): v is string => Boolean(v)).sort();
+  // The most recently updated of the equally advanced rows names it ("更新至第12集" over "第12集").
+  const newest = top.reduce((a, b) => ((b.vod_time ?? "") > (a.vod_time ?? "") ? b : a));
+  return { label: newest.remarks, since: times[0] ?? null };
+}
+
+/** Two labels describe the same progress (same episode count, same finished state). */
+export function sameProgress(a: string | null | undefined, b: string | null | undefined): boolean {
+  const pa = episodeProgress(a);
+  const pb = episodeProgress(b);
+  return pa.finished === pb.finished && pa.episodes === pb.episodes;
+}
+
 /**
  * TMDB's "next episode" lags behind the sources. Show it only if it is still ahead of what
  * the sources already carry and not in the past.

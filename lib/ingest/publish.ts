@@ -1,4 +1,5 @@
 import type { Db } from "@/lib/db/types";
+import { sameProgress, sourceProgress, type SourceLabel } from "@/lib/domain/labels";
 import { isPublishableName } from "@/lib/domain/safety";
 import { SOURCES } from "@/lib/sources/registry";
 
@@ -29,6 +30,7 @@ interface TitleRow {
   overview: string | null;
   indexable: number;
   latest_label: string | null;
+  source_updated_at: string | null;
 }
 
 /**
@@ -60,37 +62,37 @@ export async function refreshTitles(
 }
 
 /**
- * `changed`: the page is indexable and either newly so or showing a new episode label, i.e.
- * worth announcing to search engines. Null when the title does not exist.
+ * `changed`: the page is indexable and either newly so or showing new progress (a new episode,
+ * a new season, finished), i.e. worth re-rendering and announcing to search engines. A source
+ * relabelling or re-uploading what it had is not a change. Null when the title does not exist.
  */
 async function refreshTitle(db: Db, id: number): Promise<{ indexable: boolean; changed: boolean } | null> {
   const t = await db.first<TitleRow>(
-    "SELECT id, name, status, poster_path, overview, indexable, latest_label FROM titles WHERE id = ?",
+    "SELECT id, name, status, poster_path, overview, indexable, latest_label, source_updated_at FROM titles WHERE id = ?",
     [id],
   );
   if (!t) return null;
-  const latest = await db.first<{ remarks: string | null; vod_time: string | null }>(
-    `SELECT remarks, vod_time FROM source_items WHERE title_id = ? AND match_status = 'matched'
-     ORDER BY vod_time DESC LIMIT 1`,
-    [id],
-  );
   const active = SOURCES.map((s) => s.id);
-  const playable = await db.first<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM source_items WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
-     AND source_id IN (${active.map(() => "?").join(",")})`,
+  // The playable rows of sources still in use: they alone say how far the title is.
+  const rows = await db.all<SourceLabel>(
+    `SELECT remarks, vod_time, season_number FROM source_items
+     WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
+       AND source_id IN (${active.map(() => "?").join(",")})`,
     [id, ...active],
   );
+  const progress = sourceProgress(rows);
   const ok =
     t.status === "active" &&
     isPublishableName(t.name) &&
     Boolean(t.poster_path) &&
     (t.overview?.trim().length ?? 0) >= MIN_OVERVIEW_LENGTH &&
-    (playable?.n ?? 0) > 0;
+    rows.length > 0;
   await db.run(
     `UPDATE titles SET latest_label = ?, source_updated_at = ?, indexable = ?,
        published_at = CASE WHEN ? = 1 THEN COALESCE(published_at, datetime('now')) ELSE published_at END
      WHERE id = ?`,
-    [latest?.remarks ?? null, latest?.vod_time ?? null, ok ? 1 : 0, ok ? 1 : 0, id],
+    [progress.label, progress.since, ok ? 1 : 0, ok ? 1 : 0, id],
   );
-  return { indexable: ok, changed: ok && (t.indexable !== 1 || t.latest_label !== (latest?.remarks ?? null)) };
+  const progressed = !sameProgress(t.latest_label, progress.label) && (progress.since ?? "") > (t.source_updated_at ?? "");
+  return { indexable: ok, changed: ok && (t.indexable !== 1 || progressed) };
 }

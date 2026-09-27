@@ -106,6 +106,8 @@ export function titleJsonLd(t: TitleDetail, seasons: Season[]) {
     ...(t.overview ? { description: t.overview } : {}),
     ...(t.genres.length ? { genre: t.genres } : {}),
     ...(t.release_date ? { [isSeries ? "startDate" : "datePublished"]: t.release_date } : {}),
+    // The page's data last changed (new progress or TMDB details), as in the sitemaps.
+    ...(lastModified(t.updated_at, t.source_updated_at) ? { dateModified: lastModified(t.updated_at, t.source_updated_at) } : {}),
     ...(t.countries.length ? { countryOfOrigin: t.countries.map((c) => ({ "@type": "Country", name: countryLabel(c) })) } : {}),
     ...(t.languages[0] ? { inLanguage: t.languages[0] } : {}),
     ...(t.cast.length ? { actor: t.cast.slice(0, 8).map((c) => person(c.name)) } : {}),
