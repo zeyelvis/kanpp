@@ -1,7 +1,7 @@
 import type { Db, Statement } from "@/lib/db/types";
 import type { Kind } from "@/lib/domain/kinds";
 import { slugCandidates, titlePath } from "@/lib/domain/slug";
-import { cleanContent, fetchCmsByIds } from "@/lib/sources/cms";
+import { baseVodId, cleanContent, fetchCmsByIds } from "@/lib/sources/cms";
 import { getSource } from "@/lib/sources/registry";
 import { submitQueued } from "./notify";
 import type { JobContext } from "./pipeline";
@@ -52,7 +52,7 @@ async function fillContent(ctx: JobContext, rows: SourceRow[]): Promise<number> 
         const byId = new Map(items.map((i) => [String(i.vod_id), i]));
         const updates: Statement[] = [];
         for (const r of chunk) {
-          const item = byId.get(r.vod_id);
+          const item = byId.get(baseVodId(r.vod_id));
           if (!item) continue;
           // "" marks "fetched, the source has none", so later runs do not ask again.
           r.content = cleanContent(item.vod_content) ?? "";

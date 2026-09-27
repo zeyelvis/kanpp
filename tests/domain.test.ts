@@ -698,3 +698,60 @@ describe("cache time limits", () => {
     expect(await tags.getLastRevalidated(["title:1"])).toBe(5);
   });
 });
+
+describe("巨量 rows", () => {
+  const url = (n: number) => `https://jimaoys90.com/public/playback/${n}/smart.m3u8`;
+  const item = (episodes: string[], extra: Record<string, unknown> = {}) => ({
+    vod_id: "633541214016438277",
+    vod_name: "老友记",
+    vod_year: "1994",
+    type_name: "欧美剧",
+    vod_remarks: "已完结",
+    vod_play_from: "jlm3u8$$$jlplayer",
+    vod_play_url: `${episodes.map((e, i) => `${e}$${url(i)}`).join("#")}$$$${episodes.map((e, i) => `${e}$https://jimaoys91.com/s/${i}`).join("#")}`,
+    ...extra,
+  });
+
+  it("keep 18-digit ids exact", async () => {
+    const { parseCmsJson, baseVodId } = await import("@/lib/sources/cms");
+    const data = parseCmsJson<{ list: { vod_id: string; type_id: number }[] }>('{"list":[{"vod_id":633541214016438277,"type_id":12}]}');
+    expect(data.list[0].vod_id).toBe("633541214016438277");
+    expect(data.list[0].type_id).toBe(12);
+    expect(baseVodId("633541214016438277:s3")).toBe("633541214016438277");
+    expect(baseVodId("12345")).toBe("12345");
+  });
+
+  it("split a whole series into one row per season", async () => {
+    const { splitSeasons } = await import("@/lib/sources/seasons");
+    const rows = splitSeasons(item(["第 0 季 第 1 集 加更", "第 1 季 第 1 集 试播集", "第 1 季 第 2 集", "第 2 季 第 1 集", "第 2 季 第 2 集", "第 2 季 第 3 集"]));
+    expect(rows.map((r) => [r.vod_id, r.vod_name, r.vod_remarks])).toEqual([
+      ["633541214016438277:s1", "老友记 第1季", "全2集"],
+      ["633541214016438277:s2", "老友记 第2季", "已完结"],
+    ]);
+    expect(rows[1].vod_play_from).toBe("jlm3u8");
+    expect(rows[1].vod_play_url).toBe(`第 1 集$${url(3)}#第 2 集$${url(4)}#第 3 集$${url(5)}`);
+    expect(rows[0].vod_play_url).toBe(`第 1 集 试播集$${url(1)}#第 2 集$${url(2)}`);
+  });
+
+  it("leave single-season and unmarked rows as they are, minus the prefix", async () => {
+    const { splitSeasons } = await import("@/lib/sources/seasons");
+    const single = splitSeasons(item(["第 1 季 第 1 集 手拉手", "第 1 季 第 2 集"], { vod_name: "请回答1988" }));
+    expect(single).toHaveLength(1);
+    expect(single[0].vod_id).toBe("633541214016438277");
+    expect(single[0].vod_name).toBe("请回答1988");
+    expect(single[0].vod_play_url).toBe(`第 1 集 手拉手$${url(0)}#第 2 集$${url(1)}`);
+    const film = item(["播放"], { vod_name: "奥本海默", type_name: "剧情片" });
+    expect(splitSeasons(film)).toEqual([film]);
+  });
+
+  it("classify its categories", () => {
+    expect(classifyCategory("古装仙侠短剧")).toBeNull();
+    expect(classifyCategory("擦边短剧")).toBeNull();
+    expect(classifyCategory("AI制作")).toBeNull();
+    expect(classifyCategory("内地剧")).toEqual({ kind: "tv", tmdbType: "tv" });
+    expect(classifyCategory("韩国综艺")).toEqual({ kind: "variety", tmdbType: "tv" });
+    expect(classifyCategory("少儿动漫", "小猪佩奇")).toEqual({ kind: "anime", tmdbType: "tv" });
+    expect(classifyCategory("纪录剧集")).toEqual({ kind: "doc", tmdbType: "tv" });
+    expect(classifyCategory("电视电影")).toEqual({ kind: "movie", tmdbType: "movie" });
+  });
+});

@@ -2,6 +2,7 @@ import type { Db, SqlValue, Statement } from "@/lib/db/types";
 import { cleanContent, cleanDoubanId, cleanYear, type CmsItem } from "@/lib/sources/cms";
 import { classifyCategory } from "@/lib/sources/categories";
 import { pickHlsGroup, serializeGroup } from "@/lib/sources/playurl";
+import { splitSeasons } from "@/lib/sources/seasons";
 
 export type SkipReason = "category-blocked" | "category-unknown" | "no-name";
 
@@ -79,7 +80,7 @@ export async function upsertSourceRows(db: Db, sourceId: string, items: CmsItem[
   const stats: UpsertStats = { written: 0, skipped: {}, touchedTitleIds: [] };
   const statements: Statement[] = [];
   const vodIds: string[] = [];
-  for (const item of items) {
+  for (const item of items.flatMap(splitSeasons)) {
     const prepared = prepareSourceRow(sourceId, item);
     if ("skip" in prepared) {
       stats.skipped[prepared.skip] = (stats.skipped[prepared.skip] ?? 0) + 1;
@@ -92,13 +93,17 @@ export async function upsertSourceRows(db: Db, sourceId: string, items: CmsItem[
     await db.batch(statements.slice(i, i + 50));
   }
   stats.written = statements.length;
-  if (vodIds.length > 0) {
+  // Split seasons can make a page longer than D1's 100 bound parameters.
+  const touched = new Set<number>();
+  for (let i = 0; i < vodIds.length; i += 90) {
+    const chunk = vodIds.slice(i, i + 90);
     const rows = await db.all<{ title_id: number }>(
       `SELECT DISTINCT title_id FROM source_items
-       WHERE source_id = ? AND title_id IS NOT NULL AND vod_id IN (${vodIds.map(() => "?").join(",")})`,
-      [sourceId, ...vodIds],
+       WHERE source_id = ? AND title_id IS NOT NULL AND vod_id IN (${chunk.map(() => "?").join(",")})`,
+      [sourceId, ...chunk],
     );
-    stats.touchedTitleIds = rows.map((r) => r.title_id);
+    rows.forEach((r) => touched.add(r.title_id));
   }
+  stats.touchedTitleIds = [...touched];
   return stats;
 }

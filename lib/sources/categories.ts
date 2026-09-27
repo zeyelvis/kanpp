@@ -19,28 +19,29 @@ const BLOCKED = new Set([
   // short dramas and AI comics
   "短剧", "爽文短剧", "微短剧", "反转爽剧", "古装仙侠", "现代都市", "穿越年代", "言情总裁", "重生民国",
   "年代穿越", "女频恋爱", "脑洞悬疑", "漫剧", "AI漫剧",
-  "演唱会",
+  "演唱会", "AI制作",
 ]);
 
 const MOVIE = new Set([
   "电影", "电影片", "动作片", "喜剧片", "爱情片", "科幻片", "剧情片", "恐怖片", "战争片",
   "悬疑片", "犯罪片", "奇幻片", "惊悚片", "冒险片", "灾难片", "邵氏电影", "动画片", "动画电影",
-  "古装片", "历史片", "家庭片", "4K电影", "Netflix电影",
+  "古装片", "历史片", "家庭片", "4K电影", "Netflix电影", "音乐片", "西部片", "电视电影",
 ]);
 
 const TV = new Set([
   "电视剧", "连续剧", "国产剧", "大陆剧", "欧美剧", "港澳剧", "香港剧", "港剧", "韩剧", "韩国剧",
   "日剧", "日本剧", "台湾剧", "台剧", "泰剧", "泰国剧", "美国剧", "美剧", "英剧", "海外剧", "Netflix自制剧",
+  "内地剧", "东南亚剧",
 ]);
 
-const VARIETY = new Set(["综艺", "综艺片", "大陆综艺", "日韩综艺", "港台综艺", "欧美综艺"]);
+const VARIETY = new Set(["综艺", "综艺片", "大陆综艺", "日韩综艺", "港台综艺", "欧美综艺", "香港综艺", "台湾综艺", "韩国综艺", "日本综艺"]);
 
 const ANIME = new Set([
   "动漫", "动漫片", "中国动漫", "国产动漫", "日本动漫", "日韩动漫", "欧美动漫", "港台动漫",
-  "海外动漫", "动漫电影",
+  "海外动漫", "动漫电影", "韩国动漫", "少儿动漫",
 ]);
 
-const DOC = new Set(["纪录片", "记录片"]);
+const DOC = new Set(["纪录片", "记录片", "纪录剧集"]);
 
 export interface CategoryInfo {
   kind: Kind;
@@ -50,7 +51,8 @@ export interface CategoryInfo {
 
 export function classifyCategory(typeName: string | null | undefined, vodName = ""): CategoryInfo | null | undefined {
   const t = (typeName ?? "").trim();
-  if (BLOCKED.has(t)) return null;
+  // Short-drama subcategories come in many names ("古装仙侠短剧", "现代都市短剧", ...).
+  if (BLOCKED.has(t) || t.endsWith("短剧")) return null;
   if (MOVIE.has(t)) return { kind: "movie", tmdbType: "movie" };
   if (TV.has(t)) return { kind: "tv", tmdbType: "tv" };
   if (VARIETY.has(t)) return { kind: "variety", tmdbType: "tv" };

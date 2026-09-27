@@ -43,6 +43,19 @@ export interface CmsPage {
   total: number;
 }
 
+/**
+ * Parses a CMS response. Some sources (巨量) send 18-digit numeric ids, beyond what a JS number
+ * holds exactly: quoted before parsing, or two rows would share an id.
+ */
+export function parseCmsJson<T>(text: string): T {
+  return JSON.parse(text.replace(/"(vod_id|type_id|type_id_1|emp_content_id|emp_unit_id)":\s*(\d{16,})/g, '"$1":"$2"')) as T;
+}
+
+/** A row split per season (lib/sources/seasons.ts) is stored as "{vod_id}:s{n}". */
+export function baseVodId(vodId: string): string {
+  return vodId.replace(/:s\d+$/, "");
+}
+
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36";
 
 /**
@@ -60,7 +73,7 @@ export async function fetchCmsPage(source: CmsSource, page: number, hours?: numb
     try {
       const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { list?: CmsItem[]; page?: number | string; pagecount?: number | string; total?: number | string };
+      const data = parseCmsJson<{ list?: CmsItem[]; page?: number | string; pagecount?: number | string; total?: number | string }>(await res.text());
       return {
         items: Array.isArray(data.list) ? data.list : [],
         page: Number(data.page ?? page),
@@ -80,12 +93,12 @@ export async function fetchCmsByIds(source: CmsSource, ids: string[]): Promise<C
   if (ids.length === 0) return [];
   const url = new URL(source.api);
   url.searchParams.set("ac", "videolist");
-  url.searchParams.set("ids", ids.join(","));
+  url.searchParams.set("ids", [...new Set(ids.map(baseVodId))].join(","));
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { list?: CmsItem[] };
+      const data = parseCmsJson<{ list?: CmsItem[] }>(await res.text());
       return Array.isArray(data.list) ? data.list : [];
     } catch (err) {
       if (attempt >= 3) throw new Error(`${source.id} ids ${ids.slice(0, 3).join(",")}...: ${err instanceof Error ? err.message : String(err)}`);

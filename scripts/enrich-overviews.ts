@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 import type { Db, Statement } from "@/lib/db/types";
 import { bestSynopsis } from "@/lib/ingest/overview";
 import { bestTmdbOverview } from "@/lib/ingest/titles";
-import { cleanContent, fetchCmsByIds } from "@/lib/sources/cms";
+import { baseVodId, cleanContent, fetchCmsByIds } from "@/lib/sources/cms";
 import { getSource } from "@/lib/sources/registry";
 import { TmdbClient, type TmdbType } from "@/lib/tmdb/client";
 import { loadEnv, openDb, parseDbTarget } from "./lib/open-db";
@@ -92,7 +92,7 @@ async function sourceSynopses(db: Db, ids: number[]): Promise<Map<number, string
         const byId = new Map(items.map((i) => [String(i.vod_id), i]));
         const updates: Statement[] = [];
         for (const r of chunk) {
-          const item = byId.get(r.vod_id);
+          const item = byId.get(baseVodId(r.vod_id));
           if (!item) continue;
           // "" marks "fetched, the source has none".
           r.content = cleanContent(item.vod_content) ?? "";

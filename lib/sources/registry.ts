@@ -15,6 +15,14 @@ export interface CmsSource {
 //   clean + CORS: modu (douban 100%), ikun (douban 100%), zuida (no douban ids), feifan
 //   burned-in gambling overlay (~15s): wujin, guangsu (and its mirrors jisu/xinlang/hongniu)
 //   unreachable (404): baofeng, liangzi
+// Re-probed 2026-09-27 (28 sites from zzzypro.com), also for CORS on a segment and for how
+// many of 40 titles we had on one line only each could add:
+//   juliang (巨量) 30/40: an aggregator re-serving other sources' streams (dytt, wujin,
+//     guangsu/hongniu, maotai, wsy CDNs), so it inherits their burned-in ads; one row per
+//     series (split per season on ingest, lib/sources/seasons.ts); 18-digit ids.
+//   haohua/hongniu/jisu/subo/xinlang/huya/jinying: guangsu's backend (same 15/40, same size);
+//   huya/jinying segments lack CORS. ok/suoni/yaya/niuniu/tianya/wsy/maotai/douban/maoyan 0/40.
+//   360, xigua: playlists unreachable; kuaiche: API unreachable.
 export const SOURCES: CmsSource[] = [
   { id: "modu", name: "魔都", api: "https://www.mdzyapi.com/api.php/provide/vod", priority: 1 },
   { id: "ikun", name: "iKun", api: "https://ikunzyapi.com/api.php/provide/vod", priority: 2 },
@@ -22,6 +30,7 @@ export const SOURCES: CmsSource[] = [
   { id: "feifan", name: "非凡", api: "https://api.ffzyapi.com/api.php/provide/vod", priority: 4 },
   { id: "wujin", name: "无尽", api: "https://api.wujinapi.com/api.php/provide/vod", priority: 8, adIntro: true },
   { id: "guangsu", name: "光速", api: "https://api.guangsuapi.com/api.php/provide/vod", priority: 9, adIntro: true },
+  { id: "juliang", name: "巨量", api: "https://api.juliang.live/api/provide/vod", priority: 10, adIntro: true },
 ];
 
 export function getSource(id: string): CmsSource | undefined {
