@@ -129,7 +129,8 @@ export const SECTIONS = {
       { label: "国漫", spec: { kinds: ["anime"], regions: ["CN"], current: true, activeDays: 30 } },
       { label: "日漫新番", spec: { list: "tv:日本动画", kinds: ["anime"], regions: ["JP"], current: true, activeDays: 30 } },
     ],
-    chart: { kinds: ["anime"], current: true, activeDays: 30 },
+    // Douban has no list for Chinese animation: the catalog's heat, 国漫 and 日漫 only.
+    chart: { kinds: ["anime"], regions: ["CN", "JP"], current: true, activeDays: 30 },
   },
   variety: {
     tabs: [
