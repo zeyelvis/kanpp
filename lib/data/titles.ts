@@ -323,7 +323,15 @@ export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"):
       episodes: pickHlsEpisodes(r.play_from, r.play_url),
     }))
     .filter((l) => l.episodes.length > 0)
-    .sort((a, b) => a.priority - b.priority || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    // A source can list the same work twice (巨量 does): one line per source and season, the
+    // one with the most episodes, then the most recently updated.
+    .sort(
+      (a, b) =>
+        a.priority - b.priority ||
+        (a.sourceId === b.sourceId && a.season === b.season ? b.episodes.length - a.episodes.length : 0) ||
+        (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
+    )
+    .filter((l, i, all) => all.findIndex((x) => x.sourceId === l.sourceId && x.season === l.season) === i)
     .map(({ priority: _p, ...line }) => line);
 });
 
