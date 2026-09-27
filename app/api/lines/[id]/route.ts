@@ -20,7 +20,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/lines/[id]">) {
   const seasonNumbers = [...new Set(lines.map((l) => l.season).filter((s): s is number => s != null))].sort((a, b) => a - b);
   return Response.json(
     {
-      lines: rankLines(lines, stats.local, stats.global),
+      lines: rankLines(lines, stats.local, stats.global, country),
       seasons: seasonNumbers.map((n) => ({ number: n, name: seasons.find((s) => s.season_number === n)?.name ?? `第${n}季` })),
       defaultSeason: t.tmdb_type === "tv" ? (seasonNumbers.at(-1) ?? null) : null,
     },

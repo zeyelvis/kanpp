@@ -79,6 +79,8 @@ export interface Line {
   sourceId: string;
   sourceName: string;
   adIntro: boolean;
+  /** Served to this region only (see CmsSource.region). */
+  region: string | null;
   season: number | null;
   remarks: string | null;
   updatedAt: string | null;
@@ -313,6 +315,7 @@ export const getLines = cache(async (titleId: number, tmdbType: "movie" | "tv"):
       sourceId: r.source_id,
       sourceName: getSource(r.source_id)!.name,
       adIntro: Boolean(getSource(r.source_id)!.adIntro),
+      region: getSource(r.source_id)!.region ?? null,
       priority: getSource(r.source_id)!.priority,
       season: tmdbType === "tv" ? r.season_number ?? 1 : null,
       remarks: r.remarks,

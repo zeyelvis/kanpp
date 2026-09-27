@@ -247,6 +247,15 @@ describe("rankLines", () => {
     expect(ids(rankLines(lines, {}, global))).toEqual(["ikun", "wujin", "modu"]);
   });
 
+  it("offers a mainland-only line normally in China and last elsewhere", () => {
+    const withCn = [...lines, { sourceId: "uku", adIntro: false, region: "CN" }];
+    expect(ids(rankLines(withCn, {}, {}, "CN"))).toEqual(["modu", "ikun", "uku", "wujin"]);
+    expect(ids(rankLines(withCn, {}, {}, "TH"))).toEqual(["modu", "ikun", "wujin", "uku"]);
+    // Failures abroad do not count against it in China, and it can still earn a place abroad.
+    expect(ids(rankLines(withCn, {}, { uku: { ok: 0, fail: 500 } }, "CN"))[2]).toBe("uku");
+    expect(ids(rankLines(withCn, { uku: { ok: 400, fail: 0 }, modu: { ok: 50, fail: 50 } }, {}, "TH"))[0]).toBe("uku");
+  });
+
   it("lets a line with sponsor overlays lead only when the clean ones fail", () => {
     const fine = { modu: { ok: 80, fail: 20 }, wujin: { ok: 99, fail: 1 } };
     expect(ids(rankLines(lines, fine, {}))[0]).toBe("modu");
