@@ -6,7 +6,7 @@
  *   updates  hourly: the last 2 hours of every source -> matching -> publish gate -> pages with a
  *            new episode re-rendered -> search engines -> update reminders
  *   catalog  every 4 hours: recent updates and backfill pages -> matching -> publish gate ->
- *            catalog/topic counts -> people
+ *            catalog/topic counts -> people -> Douban hot lists
  *   series   every 4 hours: TMDB refresh of airing series -> publish gate -> people
  *   extras   every 4 hours: titles from source metadata (Chinese animation/variety)
  *
@@ -23,6 +23,7 @@ import { d1Db, type D1DatabaseLike } from "../lib/db/d1";
 import { retryingDb } from "../lib/db/retry";
 import { VAPID_PUBLIC_KEY } from "../lib/domain/push";
 import { withLease } from "../lib/ingest/lease";
+import { storeHotLists } from "../lib/ingest/hot-lists";
 import { siteNotifier } from "../lib/ingest/notify";
 import { runIngest, type JobContext } from "../lib/ingest/pipeline";
 import { runPushUpdates } from "../lib/ingest/push-job";
@@ -95,7 +96,13 @@ async function runJob(env: Env, job: JobName, log: (...parts: unknown[]) => void
         const ingest = await runIngest(ctx, tmdb, { hours: opts.hours ?? 2, limit: opts.limit ?? 500, concurrency: 4, light: true });
         return { ...ingest, reminders: await runPushUpdates(ctx, vapid) };
       }
-      if (job === "catalog") return runIngest(ctx, tmdb, { hours: opts.hours ?? 5, backfill: opts.backfill ?? 5, limit, concurrency: 4 });
+      if (job === "catalog") {
+        const ingest = await runIngest(ctx, tmdb, { hours: opts.hours ?? 5, backfill: opts.backfill ?? 5, limit, concurrency: 4 });
+        // Douban's hot lists order the home page and the charts (lib/data/home.ts).
+        const hotLists = await storeHotLists(db).catch((err: unknown) => `failed (${err instanceof Error ? err.message : err})`);
+        log(`hot lists: ${hotLists}`);
+        return { ...ingest, hotLists };
+      }
       if (job === "series") return runIngest(ctx, tmdb, { refreshSeries: 300, limit: 0, concurrency: 4, resolveOnly: true });
       return { sourceTitles: await runSourceTitles(ctx) };
     });

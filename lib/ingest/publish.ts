@@ -74,8 +74,8 @@ async function refreshTitle(db: Db, id: number): Promise<{ indexable: boolean; c
   if (!t) return null;
   const active = SOURCES.map((s) => s.id);
   // The playable rows of sources still in use: they alone say how far the title is.
-  const rows = await db.all<SourceLabel>(
-    `SELECT remarks, vod_time, season_number FROM source_items
+  const rows = await db.all<SourceLabel & { source_id: string }>(
+    `SELECT source_id, remarks, vod_time, season_number FROM source_items
      WHERE title_id = ? AND match_status = 'matched' AND episode_count > 0
        AND source_id IN (${active.map(() => "?").join(",")})`,
     [id, ...active],
@@ -88,10 +88,10 @@ async function refreshTitle(db: Db, id: number): Promise<{ indexable: boolean; c
     (t.overview?.trim().length ?? 0) >= MIN_OVERVIEW_LENGTH &&
     rows.length > 0;
   await db.run(
-    `UPDATE titles SET latest_label = ?, source_updated_at = ?, indexable = ?,
+    `UPDATE titles SET latest_label = ?, source_updated_at = ?, indexable = ?, source_count = ?,
        published_at = CASE WHEN ? = 1 THEN COALESCE(published_at, datetime('now')) ELSE published_at END
      WHERE id = ?`,
-    [progress.label, progress.since, ok ? 1 : 0, ok ? 1 : 0, id],
+    [progress.label, progress.since, ok ? 1 : 0, new Set(rows.map((r) => r.source_id)).size, ok ? 1 : 0, id],
   );
   const progressed = !sameProgress(t.latest_label, progress.label) && (progress.since ?? "") > (t.source_updated_at ?? "");
   return { indexable: ok, changed: ok && (t.indexable !== 1 || progressed) };

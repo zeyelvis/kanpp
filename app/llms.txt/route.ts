@@ -15,6 +15,7 @@ ${site.name}是影视资料与第三方播放线路的索引。每部作品只�
 
 ${KINDS.map((k) => `- [${KIND_LABEL[k]}](${absoluteUrl(`/${KIND_SEGMENT[k]}`)}): 最新与热门${KIND_LABEL[k]}，可按类型、地区、年份和排序筛选`).join("\n")}
 - [放送表](${absoluteUrl("/schedule")}): 未来一周的剧集更新时间
+- [排行榜](${absoluteUrl("/rank")}): [电视剧](${absoluteUrl("/rank/tv")})、[电影](${absoluteUrl("/rank/movie")})、[动漫](${absoluteUrl("/rank/anime")})、[综艺](${absoluteUrl("/rank/variety")})热度榜，按豆瓣热门和各线路热度排序，每 4 小时更新
 - [专题](${absoluteUrl("/topic")}): 按地区、类型、年份整理的片单与排行，例如 [韩剧](${absoluteUrl(topicPath("韩剧"))})、[${year}年电影](${absoluteUrl(topicPath(`${year}年电影`))})、[动作电影](${absoluteUrl(topicPath("动作电影"))})
 
 ## 网址规则

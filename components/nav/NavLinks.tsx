@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { KIND_LABEL, KIND_SEGMENT, KINDS } from "@/lib/domain/kinds";
 
-const LINKS = [...KINDS.map((k) => ({ href: `/${KIND_SEGMENT[k]}`, label: KIND_LABEL[k] })), { href: "/schedule", label: "追剧日历" }];
+const LINKS = [...KINDS.map((k) => ({ href: `/${KIND_SEGMENT[k]}`, label: KIND_LABEL[k] })), { href: "/rank", label: "排行榜" }, { href: "/schedule", label: "追剧日历" }];
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);

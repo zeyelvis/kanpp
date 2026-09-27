@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HeroCarousel } from "@/components/HeroCarousel";
+import { HotSection } from "@/components/home/HotSection";
 import { ContinueRail } from "@/components/library/ContinueRail";
 import { PosterRail } from "@/components/PosterRail";
 import { TopicChips } from "@/components/TopicChips";
 import { featuredTopics } from "@/lib/domain/topics";
 import { ScrollRail } from "@/components/ScrollRail";
 import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
-import { featuredTitles, latestByKind, topRated, upcomingEpisodes } from "@/lib/data/titles";
-import { KIND_SEGMENT, type Kind } from "@/lib/domain/kinds";
+import { heroTitles, hotTitles, SECTIONS, type ChartKind, type HotSpec } from "@/lib/data/home";
+import { latestByKind, topRated, upcomingEpisodes } from "@/lib/data/titles";
+import { KIND_SEGMENT } from "@/lib/domain/kinds";
 import { shortDate } from "@/lib/domain/labels";
 import { titlePath } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
@@ -22,20 +24,37 @@ export const metadata: Metadata = {
   openGraph: { url: "/", images: [DEFAULT_OG_IMAGE] },
 };
 
-const RAILS: { kind: Kind; title: string }[] = [
-  { kind: "tv", title: "剧集更新" },
-  { kind: "movie", title: "最新电影" },
-  { kind: "anime", title: "动漫更新" },
-  { kind: "variety", title: "综艺更新" },
-  { kind: "doc", title: "纪录片" },
+// Sections in the order Chinese streaming sites use; each with its chart (lib/data/home.ts).
+const SECTION_META: { kind: ChartKind; title: string; chart: string }[] = [
+  { kind: "tv", title: "热播剧集", chart: "电视剧热播榜" },
+  { kind: "movie", title: "热门电影", chart: "电影热度榜" },
+  { kind: "anime", title: "动漫番剧", chart: "动漫热播榜" },
+  { kind: "variety", title: "热门综艺", chart: "综艺热播榜" },
+];
+
+const HERO_SPECS: HotSpec[] = [
+  SECTIONS.tv.tabs[0].spec,
+  SECTIONS.movie.tabs[0].spec,
+  SECTIONS.anime.tabs[0].spec,
+  SECTIONS.tv.tabs[1].spec,
+  SECTIONS.movie.tabs[1].spec,
+  SECTIONS.anime.tabs[1].spec,
+  SECTIONS.variety.tabs[0].spec,
 ];
 
 export default async function HomePage() {
-  const [featured, upcoming, rated, ...rails] = await Promise.all([
-    featuredTitles(8),
+  const [featured, upcoming, rated, latest, sections] = await Promise.all([
+    heroTitles(HERO_SPECS, 8),
     upcomingEpisodes(7, 16),
     topRated(18),
-    ...RAILS.map((r) => latestByKind(r.kind, 18)),
+    latestByKind(null, 18),
+    Promise.all(
+      SECTION_META.map(async (m) => ({
+        ...m,
+        tabs: await Promise.all(SECTIONS[m.kind].tabs.map(async (t) => ({ label: t.label, titles: await hotTitles(t.spec, 12) }))),
+        chartTitles: await hotTitles(SECTIONS[m.kind].chart, 10),
+      })),
+    ),
   ]);
 
   return (
@@ -63,6 +82,18 @@ export default async function HomePage() {
 
       <ContinueRail />
 
+      {sections.map((s, i) => (
+        <HotSection
+          key={s.kind}
+          id={`hot-${s.kind}`}
+          title={s.title}
+          href={`/${KIND_SEGMENT[s.kind]}`}
+          tabs={s.tabs}
+          chart={{ title: s.chart, href: `/rank/${s.kind}`, titles: s.chartTitles }}
+          eager={i === 0 && featured.length === 0}
+        />
+      ))}
+
       {upcoming.length > 0 ? (
         <ScrollRail id="upcoming" title="本周待播" href="/schedule">
           {upcoming.map((t) => (
@@ -86,10 +117,7 @@ export default async function HomePage() {
         </ScrollRail>
       ) : null}
 
-      {RAILS.map((r, i) => (
-        <PosterRail key={r.kind} id={`rail-${r.kind}`} title={r.title} href={`/${KIND_SEGMENT[r.kind]}`} titles={rails[i]} eager={i === 0 && featured.length === 0} />
-      ))}
-
+      <PosterRail id="rail-latest" title="最近更新" titles={latest} />
       <PosterRail id="rail-rated" title="高分佳作" titles={rated} />
 
       <div className="mx-auto max-w-7xl px-4 pt-10">
