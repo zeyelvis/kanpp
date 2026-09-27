@@ -10,10 +10,11 @@ import { chartData, hotListsUpdatedAt, SECTIONS, type ChartKind } from "@/lib/da
 import { KIND_LABEL, KIND_SEGMENT } from "@/lib/domain/kinds";
 import { titlePath } from "@/lib/domain/slug";
 
-// Charts follow the catalog job (every 4 hours): cached briefly, rebuilt in the background.
+// Charts follow the catalog job (every 4 hours): rendered on first request (the build has no
+// data), cached briefly, rebuilt in the background.
 export const revalidate = 900;
 export function generateStaticParams() {
-  return Object.keys(SECTIONS).map((kind) => ({ kind }));
+  return [];
 }
 
 const HEAT: Record<ChartKind, string> = { tv: "热播", movie: "热门", anime: "热门", variety: "热门" };

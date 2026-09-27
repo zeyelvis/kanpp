@@ -27,10 +27,13 @@ for (const route of DB_BACKED) {
   console.log(`dropped ${hits.join(", ")}`);
 }
 
-const pages = readdirSync(dir).filter((f) => {
-  if (!f.endsWith(".cache") || f.startsWith("_")) return false;
-  return JSON.parse(readFileSync(join(dir, f), "utf8")).type === "app";
-});
+// Nested routes (rank/tv.cache) live in subdirectories: walk them all.
+const pages = readdirSync(dir, { recursive: true })
+  .map(String)
+  .filter((f) => {
+    if (!f.endsWith(".cache") || f.split("/").some((part) => part.startsWith("_"))) return false;
+    return JSON.parse(readFileSync(join(dir, f), "utf8")).type === "app";
+  });
 if (!pages.includes("about.cache")) throw new Error(`no build-time entry for about in ${dir}: did Next change its cache layout?`);
 for (const f of pages) rmSync(join(dir, f));
 console.log(`dropped static pages ${pages.join(", ")}`);
