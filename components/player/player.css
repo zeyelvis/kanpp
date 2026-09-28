@@ -24,21 +24,8 @@
   display: none !important;
 }
 
-/* iPhone fullscreen covers the visible viewport: held upright, xgplayer turns the player 90°
-   (its gestures and progress bar follow), turned sideways it does not. Sized here by the dynamic
-   viewport, since 100vh on iOS runs under Safari's bars and its inline width is fixed at entry. */
-@media (orientation: portrait) {
-  .xgplayer-mobile.xgplayer-rotate-fullscreen {
-    width: 100dvh !important;
-    height: 100vw !important;
-  }
-}
-@media (orientation: landscape) {
-  .xgplayer-mobile.xgplayer-rotate-fullscreen {
-    width: 100vw !important;
-    height: 100dvh !important;
-  }
-}
+/* iPhone fullscreen (xgplayer's rotate fullscreen) is sized by fitPhoneFullscreen in Player.tsx
+   from the window's measured size: viewport units lagged behind a rotation on iOS. */
 html.kp-player-full,
 html.kp-player-full body {
   overflow: hidden;

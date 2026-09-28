@@ -84,6 +84,31 @@ function EpisodeGrid({ episodes, current, onPick, dense = false }: { episodes: {
   );
 }
 
+const FIT_PROPS = ["top", "left", "right", "bottom", "width", "height", "transform", "transform-origin"] as const;
+
+/** Sizes the iPhone fullscreen player to the window: upright, turned 90° about its top left corner. */
+function fitPhoneFullscreen(root: HTMLElement) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const upright = h > w;
+  const set = (prop: (typeof FIT_PROPS)[number], value: string) => root.style.setProperty(prop, value, "important");
+  set("top", "0px");
+  set("right", "auto");
+  set("bottom", "auto");
+  set("left", upright ? `${w}px` : "0px");
+  set("width", `${upright ? h : w}px`);
+  set("height", `${upright ? w : h}px`);
+  set("transform-origin", "top left");
+  set("transform", upright ? "rotate(90deg)" : "none");
+}
+
+/** Back to the inline player (the size given at creation: 100% of its box). */
+function clearPhoneFullscreen(root: HTMLElement) {
+  for (const prop of FIT_PROPS) root.style.removeProperty(prop);
+  root.style.width = "100%";
+  root.style.height = "100%";
+}
+
 /** Tells the site whether a line reached its first frame (ranks lines per country). */
 function sendPlaybackBeacon(line: string, ok: boolean, ms: number) {
   try {
@@ -496,6 +521,38 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     return () => document.documentElement.classList.remove("kp-player-full");
   }, [full]);
 
+  // iPhone fullscreen: the player covers the window, turned 90° while the phone is upright. Sized
+  // from the window's measured size on every change, and again once iOS has settled after a
+  // rotation: viewport units (100vh, 100dvh) lagged behind, leaving the player too tall and
+  // shifted up with a band across the top. The page is scrolled to the top meanwhile.
+  useEffect(() => {
+    const root = playerRef.current?.root;
+    if (!full || !root?.classList.contains("xgplayer-rotate-fullscreen")) return;
+    const scrollY = window.scrollY;
+    let settle = 0;
+    const fit = () => {
+      window.scrollTo(0, 0);
+      fitPhoneFullscreen(root);
+    };
+    const onResize = () => {
+      fit();
+      window.clearTimeout(settle);
+      settle = window.setTimeout(fit, 350);
+    };
+    fit();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      clearPhoneFullscreen(root);
+      window.scrollTo(0, scrollY);
+    };
+  }, [full]);
+
   // Auto-play the next episode after a short, cancellable countdown.
   useEffect(() => {
     if (countdown == null) return;
@@ -718,7 +775,9 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6">
       {/* Video stays pinned under the header on phones while the episode list scrolls. */}
       {/* In fullscreen above the site header and tab bar (z-40), which it covers on phones. */}
-      <div className={`sticky top-14 -mx-4 bg-bg sm:mx-0 lg:static lg:z-auto ${full ? "z-[70]" : "z-30"}`}>
+      {/* In fullscreen not sticky (a fixed player inside a sticky box is fragile on iOS) and above
+          the site header and tab bar (z-40), which it covers on phones. */}
+      <div className={`-mx-4 bg-bg sm:mx-0 lg:static lg:z-auto ${full ? "relative z-[70]" : "sticky top-14 z-30"}`}>
         <div className="relative aspect-video overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
           <div ref={hostRef} />
         </div>
