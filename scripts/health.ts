@@ -15,7 +15,7 @@ import { join, resolve } from "node:path";
 import { parseArgs, promisify } from "node:util";
 import type { Db } from "@/lib/db/types";
 import { normalizeKey } from "@/lib/domain/normalize";
-import { gscReport, reportLines as gscLines } from "./gsc-sync";
+import { gscReport, reportLines as gscLines } from "@/lib/seo/gsc-report";
 import { cloudflareApiToken, loadEnv, openDb, parseDbTarget } from "./lib/open-db";
 
 loadEnv();
@@ -414,6 +414,13 @@ async function main() {
     const day = new Date(now.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
     writeFileSync(join(dir, `${day}.json`), JSON.stringify(report, null, 1));
     writeFileSync(join(dir, "latest.json"), JSON.stringify(report, null, 1));
+    // The back office (admin/) shows the latest report.
+    await openDb("remote")
+      .run(
+        "INSERT INTO sync_state (key, value) VALUES ('health:latest', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+        [JSON.stringify(report)],
+      )
+      .catch((err: unknown) => console.error(`health:latest not stored: ${err instanceof Error ? err.message : err}`));
   }
 
   const w = platform.worker;

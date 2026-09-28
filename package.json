@@ -16,11 +16,13 @@
     "db:migrate:remote": "wrangler d1 migrations apply kanpp-db --remote",
     "ingest": "tsx scripts/ingest.ts",
     "seo:check": "tsx scripts/seo-check.ts",
-    "ingest:deploy": "cd ingest && wrangler deploy"
+    "ingest:deploy": "cd ingest && wrangler deploy",
+    "admin:deploy": "cd admin && wrangler deploy"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.6",
     "hls.js": "^1.7.3",
+    "hono": "^4.13.9",
     "next": "16.3.6",
     "opencc-js": "^1.4.2",
     "react": "19.2.8",

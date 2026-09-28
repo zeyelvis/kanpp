@@ -1,0 +1,22 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // The back office (admin/worker.tsx) at admin.kanpp.tv, behind Cloudflare Access. It refuses
+  // every request until ACCESS_TEAM_DOMAIN, ACCESS_AUD and ADMIN_EMAILS are set as secrets.
+  "name": "kanpp-admin",
+  "main": "worker.tsx",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Resolves the "@/..." imports of lib/ the same way the app does.
+  "tsconfig": "../tsconfig.json",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "admin.kanpp.tv", "custom_domain": true }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kanpp-db",
+      "database_id": "1142d043-d0ee-4d0d-9574-9a980f44568a"
+    }
+  ],
+  "observability": { "enabled": true }
+}
