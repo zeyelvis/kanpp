@@ -27,7 +27,8 @@
     "opencc-js": "^1.4.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "xgplayer": "3.0.26"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

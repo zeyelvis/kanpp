@@ -1,0 +1,25 @@
+/* xgplayer's stylesheet joins Tailwind's base layer: its class selectors still beat the base
+   reset, and the utilities (a later layer) beat its "* { padding: 0; margin: 0 }" reset, so
+   our panels inside the player keep their classes. */
+@import "xgplayer/dist/index.min.css" layer(base);
+
+/* Our layer inside the xgplayer root (Player.tsx): above the video and controls (z-index 10),
+   letting clicks through except on its own buttons and panels. */
+.kp-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+}
+.kp-layer > * {
+  pointer-events: auto;
+}
+
+/* "选集" is for fullscreen, where the page's episode list is out of reach. */
+.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen) .kp-episodes {
+  display: none !important;
+}
+
+.xgplayer .kp-next .xgplayer-icon svg {
+  display: block;
+}

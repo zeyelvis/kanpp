@@ -1,14 +1,17 @@
 "use client";
 
-import type Hls from "hls.js";
+import "./player.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Events, type SimplePlayer } from "xgplayer";
 import { FollowButton } from "@/components/library/FollowButton";
 import { formatClock, lastWatched, recordHistory, useHistory, type TitleRef } from "@/lib/client/library";
 import { loadRate, loadSkip, saveRate, saveSkip } from "@/lib/client/player-prefs";
 import { inOutro, introMark, NO_MARKS, outroMark, RATES, startPosition, stepRate, type SkipMarks } from "@/lib/domain/skip";
 import { parseWatchState, type WatchState } from "@/lib/domain/slug";
 import { useHash, writeHash } from "./hash";
-import { hlsConfig, isMobileClient } from "./hls-config";
+import { isMobileClient } from "./hls-config";
+import { createPlayer, type HlsSource } from "./xg";
 
 export interface PlayerLine {
   sourceId: string;
@@ -32,7 +35,7 @@ const RANGE = 50;
 const AD_INTRO_SECONDS = 18;
 const AUTONEXT_SECONDS = 5;
 
-function EpisodeGrid({ episodes, current, onPick }: { episodes: { name: string }[]; current: number; onPick: (i: number) => void }) {
+function EpisodeGrid({ episodes, current, onPick, dense = false }: { episodes: { name: string }[]; current: number; onPick: (i: number) => void; dense?: boolean }) {
   const ranges = episodes.length > 60 ? Math.ceil(episodes.length / RANGE) : 1;
   const [range, setRange] = useState(Math.floor(current / RANGE));
   const activeRange = ranges > 1 ? Math.min(range, ranges - 1) : 0;
@@ -54,7 +57,7 @@ function EpisodeGrid({ episodes, current, onPick }: { episodes: { name: string }
           ))}
         </div>
       ) : null}
-      <ol className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-4">
+      <ol className={`grid gap-2 ${dense ? "grid-cols-4" : "grid-cols-4 sm:grid-cols-6 lg:grid-cols-4"}`}>
         {shown.map((e, k) => {
           const i = start + k;
           return (
@@ -85,10 +88,13 @@ function sendPlaybackBeacon(line: string, ok: boolean, ms: number) {
 }
 
 export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<SimplePlayer | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const reportRef = useRef<((ok: boolean) => void) | null>(null);
   const resumeAt = useRef<number | null>(null);
+  // Overlays render into this element inside the player, so they also show in fullscreen.
+  const [layer, setLayer] = useState<HTMLElement | null>(null);
 
   // Server render has no fragment: it shows the default season, episode 1, first line.
   const hash = useHash();
@@ -112,12 +118,12 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   const [failed, setFailed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [time, setTime] = useState(0);
+  const [inAdIntro, setInAdIntro] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [drawer, setDrawer] = useState(false);
   // Client-only component (rendered after the lines load), so storage can be read directly.
   const [rate, setRate] = useState(loadRate);
   const [marks, setMarks] = useState<SkipMarks>(() => loadSkip(title.id));
-  const [pip] = useState(() => typeof document !== "undefined" && document.pictureInPictureEnabled === true);
   const [notice, setNotice] = useState<string | null>(null);
   const marksRef = useRef(marks);
   const outroFired = useRef(false);
@@ -177,14 +183,78 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     [failed, line, seasonLines, epIndex, select],
   );
 
+  const goEpisode = useCallback(
+    (i: number) => {
+      saveProgress();
+      resumeAt.current = null;
+      setResumeDismissed(true);
+      setCountdown(null);
+      select({ ep: i + 1 });
+    },
+    [saveProgress, select],
+  );
+
+  // The player's control-bar buttons call the latest handlers.
+  const actions = useRef({ fatal: (_: string) => {}, next: () => {}, episodes: () => {} });
   useEffect(() => {
+    actions.current = {
+      fatal: (details) => {
+        reportRef.current?.(false);
+        failover(details);
+      },
+      next: () => {
+        if (hasNext) goEpisode(epIndex + 1);
+      },
+      episodes: () => setDrawer((open) => !open),
+    };
+  }, [failover, goEpisode, hasNext, epIndex]);
+
+  // One player for the page: episodes and lines load into it (loadEpisode below).
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el || !episode) return;
+    const player = createPlayer({
+      el,
+      url: episode.url,
+      poster: backdrop,
+      rate,
+      rates: RATES,
+      mobileBuffer: isMobileClient(),
+      onFatal: (details) => actions.current.fatal(details),
+      onNext: () => actions.current.next(),
+      onEpisodes: () => actions.current.episodes(),
+    });
+    playerRef.current = player;
+    videoRef.current = player.media as HTMLVideoElement;
+    const overlay = document.createElement("div");
+    overlay.className = "kp-layer";
+    player.root?.appendChild(overlay);
+    setLayer(overlay);
+    const onFullscreen = (full: boolean) => {
+      if (!full) setDrawer(false);
+    };
+    player.on(Events.FULLSCREEN_CHANGE, onFullscreen);
+    player.on(Events.CSS_FULLSCREEN_CHANGE, onFullscreen);
+    return () => {
+      setLayer(null);
+      playerRef.current = null;
+      videoRef.current = null;
+      player.destroy();
+    };
+    // Created once; its first source, poster and speed are read at creation only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the current episode of the current line.
+  useEffect(() => {
+    const player = playerRef.current;
     const video = videoRef.current;
-    if (!video || !episode) return;
-    let cancelled = false;
+    if (!player || !video || !episode) return;
     setLoading(true);
     setError(null);
-
+    setDrawer(false);
     outroFired.current = false;
+
     const onReady = () => {
       let resume = resumeAt.current;
       if (resume == null && !resumeDismissed) {
@@ -195,7 +265,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
       const target = startPosition(marksRef.current, resume, video.duration);
       if (target != null) video.currentTime = target;
       resumeAt.current = null;
-      void video.play().catch(() => undefined); // autoplay may be blocked; controls remain
+      void Promise.resolve(player.play()).catch(() => undefined); // autoplay may be blocked; the start button remains
     };
     video.addEventListener("loadedmetadata", onReady, { once: true });
 
@@ -211,44 +281,19 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     reportRef.current = report;
     const onFirstFrame = () => report(true);
     video.addEventListener("loadeddata", onFirstFrame, { once: true });
+    video.setAttribute("aria-label", `${title.name} ${episode.name}`);
 
-    (async () => {
-      const { default: HlsCtor } = await import("hls.js");
-      if (cancelled) return;
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
-      if (HlsCtor.isSupported()) {
-        const hls = new HlsCtor(hlsConfig(isMobileClient()));
-        hlsRef.current = hls;
-        let mediaRecoveries = 0;
-        hls.on(HlsCtor.Events.ERROR, (_e, data) => {
-          if (!data.fatal) return;
-          if (data.type === HlsCtor.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 1) {
-            mediaRecoveries++;
-            hls.recoverMediaError();
-            return;
-          }
-          report(false);
-          failover(data.details);
-        });
-        hls.loadSource(episode.url);
-        hls.attachMedia(video);
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = episode.url; // Safari / iOS native HLS
-      } else {
-        setError("当前浏览器不支持 HLS 播放，请换用 Chrome、Edge 或 Safari。");
-      }
-    })();
+    const source = player.getPlugin("kpSource") as HlsSource | null;
+    void source?.load(episode.url).then((mode) => {
+      if (mode === "unsupported") setError("当前浏览器不支持 HLS 播放，请换用 Chrome、Edge 或 Safari。");
+    });
 
     return () => {
-      cancelled = true;
       video.removeEventListener("loadedmetadata", onReady);
       video.removeEventListener("loadeddata", onFirstFrame);
       reportRef.current = null;
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
     };
-    // failover/season/epIndex/line are read at load time only; the player is rebuilt per URL.
+    // failover/season/epIndex/line are read at load time only; the player reloads per URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode?.url]);
 
@@ -257,7 +302,8 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     const video = videoRef.current;
     if (!video) return;
     const onError = () => {
-      if (hlsRef.current) return;
+      const source = playerRef.current?.getPlugin("kpSource") as HlsSource | null;
+      if (source?.usingHls) return;
       reportRef.current?.(false);
       failover("media-error");
     };
@@ -273,6 +319,21 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     video.playbackRate = rate;
   }, [rate, episode?.url]);
 
+  // Speed picked in the player's menu (or held by a long press): remembered for next time.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onRate = () => {
+      const next = video.playbackRate;
+      if ((RATES as readonly number[]).includes(next)) {
+        setRate(next);
+        saveRate(next);
+      }
+    };
+    video.addEventListener("ratechange", onRate);
+    return () => video.removeEventListener("ratechange", onRate);
+  }, []);
+
   // Save progress periodically and when leaving.
   useEffect(() => {
     const video = videoRef.current;
@@ -287,16 +348,50 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     };
   }, [saveProgress]);
 
-  const goEpisode = useCallback(
-    (i: number) => {
+  // Buffering state, the ad-intro window, the outro mark and the end of an episode.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onWaiting = () => setLoading(true);
+    const onPlaying = () => setLoading(false);
+    const onTime = () => {
+      setInAdIntro(video.currentTime > 0.5 && video.currentTime < AD_INTRO_SECONDS);
+      // Reached the viewer's outro mark: offer the next episode (once per episode).
+      if (!outroFired.current && hasNext && countdown == null && inOutro(marks, video.currentTime, video.duration)) {
+        outroFired.current = true;
+        saveProgress();
+        setCountdown(AUTONEXT_SECONDS);
+      }
+    };
+    const onEnded = () => {
       saveProgress();
-      resumeAt.current = null;
-      setResumeDismissed(true);
-      setCountdown(null);
-      select({ ep: i + 1 });
-    },
-    [saveProgress, select],
-  );
+      if (hasNext) setCountdown(AUTONEXT_SECONDS);
+    };
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("canplay", onPlaying);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("ended", onEnded);
+    return () => {
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("canplay", onPlaying);
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("ended", onEnded);
+    };
+  }, [hasNext, countdown, marks, saveProgress]);
+
+  // The player's own buttons: next episode only when there is one; episodes when there is a choice.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const next = player.getPlugin("kpNext");
+    const list = player.getPlugin("kpEpisodes");
+    if (hasNext) next?.show();
+    else next?.hide();
+    if (epCount > 1 || seasonLines.length > 1) list?.show();
+    else list?.hide();
+  }, [hasNext, epCount, seasonLines.length, layer]);
 
   // Auto-play the next episode after a short, cancellable countdown.
   useEffect(() => {
@@ -308,27 +403,20 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     return () => window.clearTimeout(t);
   }, [countdown, goEpisode, epIndex]);
 
-  // Keyboard shortcuts (ignored while typing).
+  // Shortcuts the player does not have (it handles space, arrows and volume). Ignored while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const player = playerRef.current;
       const video = videoRef.current;
-      if (!video || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === " " || e.key === "k") {
-        if (target === video) return; // the native control already handles it
-        e.preventDefault();
-        if (video.paused) void video.play();
-        else video.pause();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        video.currentTime = Math.max(0, video.currentTime - 10);
+      if (!player || !video || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "k") {
+        if (video.paused) void Promise.resolve(player.play()).catch(() => undefined);
+        else player.pause();
       } else if (e.key === "f") {
-        if (document.fullscreenElement) void document.exitFullscreen();
-        else void video.requestFullscreen?.();
+        if (player.fullscreen) void player.exitFullscreen();
+        else void player.getFullscreen();
       } else if (e.key === "n" && hasNext) {
         goEpisode(epIndex + 1);
       } else if (e.key === ">" || e.key === "<") {
@@ -341,22 +429,6 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [goEpisode, epIndex, hasNext]);
-
-  const changeRate = (next: number) => {
-    setRate(next);
-    saveRate(next);
-  };
-
-  const togglePip = async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    try {
-      if (document.pictureInPictureElement) await document.exitPictureInPicture();
-      else await video.requestPictureInPicture();
-    } catch {
-      setNotice("当前浏览器暂时无法开启画中画");
-    }
-  };
 
   const updateMarks = (next: SkipMarks, message: string) => {
     setMarks(next);
@@ -389,79 +461,111 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     setEp(saved.ep);
   };
 
+  const pickLine = (id: string) => {
+    resumeAt.current = videoRef.current?.currentTime ?? null;
+    setFailed(new Set());
+    setLineId(id);
+  };
+
   if (!line || !episode) {
     return <p className="rounded-xl bg-surface p-6 text-muted">这部作品暂时没有可播放的线路。</p>;
   }
 
   const btn = "inline-flex h-9 items-center gap-1 rounded-lg px-3 text-sm ring-1 ring-line transition";
 
+  const lineButtons = (
+    <div className="flex flex-wrap gap-2">
+      {seasonLines.map((l) => (
+        <button
+          key={l.sourceId}
+          type="button"
+          onClick={() => pickLine(l.sourceId)}
+          className={`rounded-lg px-3 py-1.5 text-sm ring-1 ${
+            l.sourceId === line.sourceId
+              ? "bg-accent-fill text-white ring-accent"
+              : failed.has(l.sourceId)
+                ? "bg-surface text-faint line-through ring-line"
+                : "bg-surface ring-line hover:ring-accent/60"
+          }`}
+        >
+          {l.sourceName}
+          {l.adIntro ? <span className="ml-1 text-xs opacity-70">片头广告</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+
+  const overlays = (
+    <>
+      {line.adIntro && inAdIntro && !loading ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (videoRef.current) videoRef.current.currentTime = AD_INTRO_SECONDS;
+          }}
+          className="absolute right-3 top-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white ring-1 ring-white/20 hover:bg-black"
+        >
+          跳过片头广告 ›
+        </button>
+      ) : null}
+      {countdown != null ? (
+        <div className="absolute inset-0 grid place-items-center bg-black/75 text-center">
+          <div>
+            <p className="text-sm text-muted">即将播放</p>
+            <p className="mt-1 text-lg font-semibold">{line.episodes[epIndex + 1]?.name}</p>
+            <p className="mt-1 text-3xl font-bold text-accent">{countdown}</p>
+            <div className="mt-4 flex justify-center gap-3">
+              <button type="button" onClick={() => goEpisode(epIndex + 1)} className="rounded-full bg-accent-fill px-5 py-2 text-sm font-medium text-white">
+                立即播放
+              </button>
+              <button type="button" onClick={() => setCountdown(null)} className="rounded-full bg-white/10 px-5 py-2 text-sm">
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {error ? <div className="absolute inset-0 grid place-items-center bg-black/85 p-6 text-center text-sm text-ink">{error}</div> : null}
+      {drawer ? (
+        // Solid panel (no backdrop blur) over the video: fullscreen video stays on its overlay plane.
+        <aside className="kp-drawer absolute inset-y-0 right-0 flex w-[min(360px,85%)] flex-col bg-[#141416] text-ink">
+          <div className="flex items-center justify-between px-4 py-3">
+            <p className="font-semibold">
+              {season && seasons.length > 1 ? `${seasons.find((s) => s.number === season)?.name ?? `第${season}季`} · ` : ""}
+              {episode.name}
+            </p>
+            <button type="button" onClick={() => setDrawer(false)} aria-label="关闭" className="px-2 text-xl text-muted hover:text-ink">
+              ×
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+            {seasonLines.length > 1 ? (
+              <div>
+                <p className="mb-2 text-sm text-muted">线路</p>
+                {lineButtons}
+              </div>
+            ) : null}
+            {epCount > 1 ? (
+              <div>
+                <p className="mb-2 text-sm text-muted">选集 · 共{epCount}集</p>
+                <EpisodeGrid key={`drawer-${season}-${line.sourceId}`} episodes={line.episodes} current={epIndex} onPick={goEpisode} dense />
+              </div>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6">
       {/* Video stays pinned under the header on phones while the episode list scrolls. */}
       <div className="sticky top-14 z-30 -mx-4 bg-bg sm:mx-0 lg:static lg:z-auto">
-        <div className="relative overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
-          <video
-            ref={videoRef}
-            className="aspect-video w-full bg-black"
-            controls
-            playsInline
-            preload="auto"
-            poster={backdrop ?? undefined}
-            onWaiting={() => setLoading(true)}
-            onPlaying={() => setLoading(false)}
-            onCanPlay={() => setLoading(false)}
-            onTimeUpdate={(e) => {
-              const v = e.currentTarget;
-              setTime(v.currentTime);
-              // Reached the viewer's outro mark: offer the next episode (once per episode).
-              if (!outroFired.current && hasNext && countdown == null && inOutro(marks, v.currentTime, v.duration)) {
-                outroFired.current = true;
-                saveProgress();
-                setCountdown(AUTONEXT_SECONDS);
-              }
-            }}
-            onEnded={() => {
-              saveProgress();
-              if (hasNext) setCountdown(AUTONEXT_SECONDS);
-            }}
-            aria-label={`${title.name} ${episode.name}`}
-          />
-          {loading && !error ? (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center">
-              <span className="size-10 animate-spin rounded-full border-2 border-white/25 border-t-accent" aria-label="加载中" />
-            </div>
-          ) : null}
-          {line.adIntro && time > 0.5 && time < AD_INTRO_SECONDS && !loading ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (videoRef.current) videoRef.current.currentTime = AD_INTRO_SECONDS;
-              }}
-              className="absolute right-3 top-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white ring-1 ring-white/20 hover:bg-black"
-            >
-              跳过片头广告 ›
-            </button>
-          ) : null}
-          {countdown != null ? (
-            <div className="absolute inset-0 grid place-items-center bg-black/75 text-center">
-              <div>
-                <p className="text-sm text-muted">即将播放</p>
-                <p className="mt-1 text-lg font-semibold">{line.episodes[epIndex + 1]?.name}</p>
-                <p className="mt-1 text-3xl font-bold text-accent">{countdown}</p>
-                <div className="mt-4 flex justify-center gap-3">
-                  <button type="button" onClick={() => goEpisode(epIndex + 1)} className="rounded-full bg-accent-fill px-5 py-2 text-sm font-medium text-white">
-                    立即播放
-                  </button>
-                  <button type="button" onClick={() => setCountdown(null)} className="rounded-full bg-white/10 px-5 py-2 text-sm">
-                    取消
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-          {error ? <div className="absolute inset-0 grid place-items-center bg-black/85 p-6 text-center text-sm text-ink">{error}</div> : null}
+        <div className="relative aspect-video overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
+          <div ref={hostRef} />
         </div>
       </div>
+      {layer ? createPortal(overlays, layer) : null}
 
       <div className="mt-4 space-y-4 lg:mt-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -480,53 +584,31 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <label className="inline-flex items-center gap-1.5 text-muted">
-            倍速
-            <select
-              aria-label="倍速"
-              value={rate}
-              onChange={(e) => changeRate(Number(e.target.value))}
-              className="h-8 rounded-md bg-surface px-2 text-ink ring-1 ring-line"
+        {epCount > 1 ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              onClick={markIntro}
+              title="播到正片开始的地方点一下，以后每集自动从这里播放"
+              className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
             >
-              {RATES.map((r) => (
-                <option key={r} value={r}>
-                  {r}x
-                </option>
-              ))}
-            </select>
-          </label>
-          {pip ? (
-            <button type="button" onClick={togglePip} className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60">
-              画中画
+              片头到这{marks.intro != null ? ` · ${formatClock(marks.intro)}` : ""}
             </button>
-          ) : null}
-          {epCount > 1 ? (
-            <>
-              <button
-                type="button"
-                onClick={markIntro}
-                title="播到正片开始的地方点一下，以后每集自动从这里播放"
-                className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
-              >
-                片头到这{marks.intro != null ? ` · ${formatClock(marks.intro)}` : ""}
+            <button
+              type="button"
+              onClick={markOutro}
+              title="播到片尾开始的地方点一下，以后每集到这里就准备播放下一集"
+              className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
+            >
+              片尾从这{marks.outro != null ? ` · 前${formatClock(marks.outro)}` : ""}
+            </button>
+            {marks.intro != null || marks.outro != null ? (
+              <button type="button" onClick={() => updateMarks(NO_MARKS, "已清除这部剧的片头片尾设置")} className="h-8 px-1 text-muted hover:text-ink">
+                清除
               </button>
-              <button
-                type="button"
-                onClick={markOutro}
-                title="播到片尾开始的地方点一下，以后每集到这里就准备播放下一集"
-                className="h-8 rounded-md px-3 ring-1 ring-line hover:ring-accent/60"
-              >
-                片尾从这{marks.outro != null ? ` · 前${formatClock(marks.outro)}` : ""}
-              </button>
-              {marks.intro != null || marks.outro != null ? (
-                <button type="button" onClick={() => updateMarks(NO_MARKS, "已清除这部剧的片头片尾设置")} className="h-8 px-1 text-muted hover:text-ink">
-                  清除
-                </button>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
         {notice ? (
           <p role="status" className="text-xs text-muted">
             {notice}
@@ -550,29 +632,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
 
         <div>
           <p className="mb-2 text-sm text-muted">线路</p>
-          <div className="flex flex-wrap gap-2">
-            {seasonLines.map((l) => (
-              <button
-                key={l.sourceId}
-                type="button"
-                onClick={() => {
-                  resumeAt.current = videoRef.current?.currentTime ?? null;
-                  setFailed(new Set());
-                  setLineId(l.sourceId);
-                }}
-                className={`rounded-lg px-3 py-1.5 text-sm ring-1 ${
-                  l.sourceId === line.sourceId
-                    ? "bg-accent-fill text-white ring-accent"
-                    : failed.has(l.sourceId)
-                      ? "bg-surface text-faint line-through ring-line"
-                      : "bg-surface ring-line hover:ring-accent/60"
-                }`}
-              >
-                {l.sourceName}
-                {l.adIntro ? <span className="ml-1 text-xs opacity-70">片头广告</span> : null}
-              </button>
-            ))}
-          </div>
+          {lineButtons}
         </div>
 
         {seasons.length > 1 ? (
@@ -603,7 +663,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             <EpisodeGrid key={`${season}-${line.sourceId}`} episodes={line.episodes} current={epIndex} onPick={goEpisode} />
           </div>
         ) : null}
-        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒 · &lt; &gt; 调倍速 · F 全屏 · N 下一集</p>
+        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒 · ↑ ↓ 音量 · &lt; &gt; 调倍速 · F 全屏 · N 下一集</p>
       </div>
     </div>
   );
