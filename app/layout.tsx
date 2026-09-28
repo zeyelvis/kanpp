@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
+import { InstallPrompt } from "@/components/install/InstallPrompt";
 import { MobileTabBar } from "@/components/nav/NavLinks";
 import { NavProgress } from "@/components/nav/NavProgress";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { INSTALL_CAPTURE_SCRIPT } from "@/lib/client/install";
 import { DEFAULT_OG_IMAGE, site } from "@/lib/config/site";
 import "./globals.css";
 
@@ -37,6 +39,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-CN" className="h-full">
       <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+        {/* Keeps the browser's one-time "can install" event until the install offer mounts. */}
+        <script dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
         {/* Only the progress bar sits in this boundary; page content is outside it. */}
         <Suspense fallback={null}>
           <NavProgress />
@@ -45,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="flex-1">{children}</main>
         <SiteFooter />
         <MobileTabBar />
+        <InstallPrompt />
       </body>
     </html>
   );

@@ -12,6 +12,7 @@ import { inOutro, introMark, NO_MARKS, outroMark, RATES, startPosition, stepRate
 import { parseWatchState, type WatchState } from "@/lib/domain/slug";
 import { tmdbImage } from "@/lib/images";
 import { useHash, writeHash } from "./hash";
+import { WATCHED_EVENT } from "@/lib/client/install";
 import { isMobileClient } from "./hls-config";
 import { createPlayer, type HlsSource } from "./xg";
 
@@ -293,7 +294,10 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
       sendPlaybackBeacon(sourceId, ok, ok ? performance.now() - startedAt : 0);
     };
     reportRef.current = report;
-    const onFirstFrame = () => report(true);
+    const onFirstFrame = () => {
+      report(true);
+      window.dispatchEvent(new Event(WATCHED_EVENT)); // counts toward the install offer
+    };
     video.addEventListener("loadeddata", onFirstFrame, { once: true });
     video.setAttribute("aria-label", `${title.name} ${episode.name}`);
 
