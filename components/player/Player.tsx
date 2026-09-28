@@ -125,6 +125,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   const [countdown, setCountdown] = useState<number | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [full, setFull] = useState(false);
   // Client-only component (rendered after the lines load), so storage can be read directly.
   const [rate, setRate] = useState(loadRate);
   const [marks, setMarks] = useState<SkipMarks>(() => loadSkip(title.id));
@@ -199,19 +200,22 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   );
 
   // The player's control-bar buttons call the latest handlers.
-  const actions = useRef({ fatal: (_: string) => {}, next: () => {}, episodes: () => {} });
+  const actions = useRef({ fatal: (_: string) => {}, prev: () => {}, next: () => {}, episodes: () => {} });
   useEffect(() => {
     actions.current = {
       fatal: (details) => {
         reportRef.current?.(false);
         failover(details);
       },
+      prev: () => {
+        if (hasPrev) goEpisode(epIndex - 1);
+      },
       next: () => {
         if (hasNext) goEpisode(epIndex + 1);
       },
       episodes: () => setDrawer((open) => !open),
     };
-  }, [failover, goEpisode, hasNext, epIndex]);
+  }, [failover, goEpisode, hasPrev, hasNext, epIndex]);
 
   // One player for the page: episodes and lines load into it (loadEpisode below).
   useEffect(() => {
@@ -225,6 +229,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
       rates: RATES,
       mobileBuffer: isMobileClient(),
       onFatal: (details) => actions.current.fatal(details),
+      onPrev: () => actions.current.prev(),
       onNext: () => actions.current.next(),
       onEpisodes: () => actions.current.episodes(),
     });
@@ -234,13 +239,15 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     overlay.className = "kp-layer";
     player.root?.appendChild(overlay);
     setLayer(overlay);
-    const onFullscreen = (full: boolean) => {
-      if (!full) setDrawer(false);
+    const onFullscreen = (isFull: boolean) => {
+      setFull(isFull);
+      if (!isFull) setDrawer(false);
     };
     player.on(Events.FULLSCREEN_CHANGE, onFullscreen);
     player.on(Events.CSS_FULLSCREEN_CHANGE, onFullscreen);
     return () => {
       setLayer(null);
+      setFull(false);
       overlay.remove();
       playerRef.current = null;
       videoRef.current = null;
@@ -424,13 +431,29 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   useEffect(() => {
     const player = playerRef.current;
     if (!player) return;
+    const prev = player.getPlugin("kpPrev");
     const next = player.getPlugin("kpNext");
     const list = player.getPlugin("kpEpisodes");
+    if (hasPrev) prev?.show();
+    else prev?.hide();
     if (hasNext) next?.show();
     else next?.hide();
     if (epCount > 1 || seasonLines.length > 1) list?.show();
     else list?.hide();
-  }, [hasNext, epCount, seasonLines.length, layer]);
+  }, [hasPrev, hasNext, epCount, seasonLines.length, layer]);
+
+  // The fullscreen title bar names what is playing.
+  const seasonName = season && seasons.length > 1 ? (seasons.find((s) => s.number === season)?.name ?? `第${season}季`) : "";
+  const playingName = [title.name, seasonName, epCount > 1 ? episode?.name : ""].filter(Boolean).join(" ");
+  useEffect(() => {
+    (playerRef.current?.getPlugin("kpTitle") as { setTitle(text: string): void } | null)?.setTitle(playingName);
+  }, [playingName, layer]);
+
+  // While the player covers the page (phones, web fullscreen) the page under it must not scroll.
+  useEffect(() => {
+    document.documentElement.classList.toggle("kp-player-full", full);
+    return () => document.documentElement.classList.remove("kp-player-full");
+  }, [full]);
 
   // Auto-play the next episode after a short, cancellable countdown.
   useEffect(() => {
@@ -653,7 +676,8 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   return (
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6">
       {/* Video stays pinned under the header on phones while the episode list scrolls. */}
-      <div className="sticky top-14 z-30 -mx-4 bg-bg sm:mx-0 lg:static lg:z-auto">
+      {/* In fullscreen above the site header and tab bar (z-40), which it covers on phones. */}
+      <div className={`sticky top-14 -mx-4 bg-bg sm:mx-0 lg:static lg:z-auto ${full ? "z-[70]" : "z-30"}`}>
         <div className="relative aspect-video overflow-hidden bg-black sm:rounded-xl sm:ring-1 sm:ring-line">
           <div ref={hostRef} />
         </div>

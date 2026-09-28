@@ -15,11 +15,82 @@
   pointer-events: auto;
 }
 
-/* "选集" is for fullscreen, where the page's episode list is out of reach. */
-.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen) .kp-episodes {
+/* Fullscreen only (real, web, or a phone's covering fullscreen): 选集 (the page's episode list
+   is out of reach), previous episode, ±10 s and the title bar. */
+.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen):not(.xgplayer-rotate-fullscreen) .kp-episodes,
+.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen):not(.xgplayer-rotate-fullscreen) .kp-prev,
+.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen):not(.xgplayer-rotate-fullscreen) .kp-seek,
+.xgplayer:not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen):not(.xgplayer-rotate-fullscreen) .kp-top {
   display: none !important;
+}
+
+/* iPhone fullscreen covers the visible viewport: held upright, xgplayer turns the player 90°
+   (its gestures and progress bar follow), turned sideways it does not. Sized here by the dynamic
+   viewport, since 100vh on iOS runs under Safari's bars and its inline width is fixed at entry. */
+@media (orientation: portrait) {
+  .xgplayer-mobile.xgplayer-rotate-fullscreen {
+    width: 100dvh !important;
+    height: 100vw !important;
+  }
+}
+@media (orientation: landscape) {
+  .xgplayer-mobile.xgplayer-rotate-fullscreen {
+    width: 100vw !important;
+    height: 100dvh !important;
+  }
+}
+html.kp-player-full,
+html.kp-player-full body {
+  overflow: hidden;
+}
+
+.xgplayer .kp-seek .xgplayer-icon {
+  position: relative;
+}
+.xgplayer .kp-seek-n {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  padding-top: 1px;
+}
+.xgplayer .kp-top {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 50px;
+  padding-left: 8px;
+  color: #fff;
+  font-size: 15px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+.xgplayer .kp-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.xgplayer .kp-clock {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .xgplayer .kp-next .xgplayer-icon svg {
   display: block;
+}
+
+/* The title bar spans the player (xgplayer leaves its width to the content on computers), with a
+   light shade behind it in fullscreen so the title reads over bright pictures. */
+.xgplayer-pc .xg-top-bar {
+  left: 0;
+  right: 0;
+}
+.xgplayer.xgplayer-is-fullscreen .xg-top-bar,
+.xgplayer.xgplayer-is-cssfullscreen .xg-top-bar,
+.xgplayer.xgplayer-rotate-fullscreen .xg-top-bar {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.45), transparent);
 }
