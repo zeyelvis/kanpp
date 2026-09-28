@@ -18,21 +18,27 @@ async function chunks<T>(items: T[], size: number, fn: (chunk: T[]) => Promise<v
   for (let i = 0; i < items.length; i += size) await fn(items.slice(i, i + size));
 }
 
-/** Unmatched rows in the eligible categories, paged by rowid (D1 responses stay small). */
+/**
+ * Unmatched rows in the eligible categories, in rowid order. Paged by rowid one category at a
+ * time (D1 responses stay small): each page is a range on ix_source_items_unmatched_type, where
+ * paging all categories at once re-read every unmatched row (~150k) per page.
+ */
 async function readRows(db: Db): Promise<SourceRow[]> {
-  const rows: SourceRow[] = [];
-  for (let after = 0; ; ) {
-    const page = await db.all<SourceRow & { rid: number }>(
-      `SELECT rowid AS rid, source_id, vod_id, vod_name, vod_year, type_name, area, pic, actor, director, content, classes,
-              remarks, vod_time, episode_count
-       FROM source_items WHERE match_status = 'unmatched' AND type_name IN (${SOURCE_TITLE_TYPES.map(() => "?").join(",")})
-         AND rowid > ? ORDER BY rowid LIMIT 2000`,
-      [...SOURCE_TITLE_TYPES, after],
-    );
-    rows.push(...page);
-    if (page.length < 2000) return rows;
-    after = page.at(-1)!.rid;
+  const rows: (SourceRow & { rid: number })[] = [];
+  for (const type of SOURCE_TITLE_TYPES) {
+    for (let after = 0; ; ) {
+      const page = await db.all<SourceRow & { rid: number }>(
+        `SELECT rowid AS rid, source_id, vod_id, vod_name, vod_year, type_name, area, pic, actor, director, content, classes,
+                remarks, vod_time, episode_count
+         FROM source_items WHERE match_status = 'unmatched' AND type_name = ? AND rowid > ? ORDER BY rowid LIMIT 2000`,
+        [type, after],
+      );
+      rows.push(...page);
+      if (page.length < 2000) break;
+      after = page.at(-1)!.rid;
+    }
   }
+  return rows.sort((a, b) => a.rid - b.rid);
 }
 
 /** Fetches synopses for rows that lack one (existing rows predate the content column). */

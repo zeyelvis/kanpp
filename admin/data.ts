@@ -1,4 +1,5 @@
 import type { Db } from "@/lib/db/types";
+import { KINDS } from "@/lib/domain/kinds";
 import { readHotLists } from "@/lib/ingest/hot-lists";
 import { gscReport } from "@/lib/seo/gsc-report";
 import { SOURCES } from "@/lib/sources/registry";
@@ -19,9 +20,21 @@ export async function healthReport(db: Db): Promise<HealthReport | null> {
   return row ? (JSON.parse(row.value) as HealthReport) : null;
 }
 
+/** Titles per kind as the last ingest run stored them (publish.ts storeCatalogCounts); counts only if never stored. */
+async function countsByKind(db: Db): Promise<{ kind: string; n: number }[]> {
+  const stored = await db.all<{ key: string; value: string }>(
+    `SELECT key, value FROM sync_state WHERE key IN (${KINDS.map(() => "?").join(",")})`,
+    KINDS.map((k) => `count:${k}`),
+  );
+  const rows = stored.length
+    ? stored.map((r) => ({ kind: r.key.slice("count:".length), n: Number(r.value) }))
+    : await db.all<{ kind: string; n: number }>("SELECT kind, COUNT(*) AS n FROM titles WHERE indexable = 1 GROUP BY kind");
+  return rows.sort((a, b) => b.n - a.n);
+}
+
 export async function catalogStats(db: Db) {
   const [byKind, people, published, updated] = await Promise.all([
-    db.all<{ kind: string; n: number }>("SELECT kind, COUNT(*) AS n FROM titles WHERE indexable = 1 GROUP BY kind ORDER BY n DESC"),
+    countsByKind(db),
     db.first<{ n: number }>("SELECT COUNT(*) AS n FROM people WHERE indexable = 1"),
     db.first<{ n: number }>("SELECT COUNT(*) AS n FROM titles WHERE indexable = 1 AND published_at >= datetime('now', '-1 day')"),
     db.first<{ n: number }>("SELECT COUNT(DISTINCT title_id) AS n FROM title_updates WHERE seen_at >= datetime('now', '-1 day')"),

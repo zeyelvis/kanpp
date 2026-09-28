@@ -64,10 +64,12 @@ async function cardsInOrder(ids: number[], kinds: Kind[]): Promise<TitleCard[]> 
   const rows: TitleCard[] = [];
   for (let i = 0; i < ids.length; i += 80) {
     const chunk = ids.slice(i, i + 80);
+    // "+" keeps D1 on primary-key lookups: on the (indexable, kind) indexes it scanned the
+    // whole kind, 30-60k rows for ~50 cards.
     rows.push(
       ...(await db.all<TitleCard>(
-        `SELECT ${CARD_COLUMNS} ${CARD_JOIN} WHERE t.id IN (${chunk.map(() => "?").join(",")}) AND t.indexable = 1
-           AND t.kind IN (${kinds.map(() => "?").join(",")})`,
+        `SELECT ${CARD_COLUMNS} ${CARD_JOIN} WHERE t.id IN (${chunk.map(() => "?").join(",")}) AND +t.indexable = 1
+           AND +t.kind IN (${kinds.map(() => "?").join(",")})`,
         [...chunk, ...kinds],
       )),
     );

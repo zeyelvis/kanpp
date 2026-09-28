@@ -37,9 +37,11 @@ const run = promisify(execFile);
 const LIMITS = {
   errorRate: 0.005, // 5xx share of all requests
   errorCount: 200,
-  d1RowsPerDay: 20_000_000,
+  // Set for a catalog of hundreds of titles; at ~90k titles one sitemap file alone reads ~40k
+  // rows. The Workers paid plan includes ~800M rows a day.
+  d1RowsPerDay: 100_000_000,
   queryAvgRows: 5_000, // a query averaging more rows than this, and
-  querySumRows: 3_000_000, // reading more than this in total, is worth fixing
+  querySumRows: 6_000_000, // reading more than this in total, is worth fixing
   crawlerFailShare: 0.05, // non-2xx/3xx share of a search crawler's requests
 };
 

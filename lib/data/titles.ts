@@ -351,10 +351,14 @@ export async function searchTitles(query: string, limit = 48, { inside = false }
     [key, `${key}\u{10FFFF}`, q, limit],
   ));
   // Few hits: also titles whose Chinese name contains the words ("三十岁" -> 东京三十岁左右).
-  // A scan of the catalog, so only for Chinese queries of two or more characters, cached.
+  // A scan, so only for Chinese queries of two or more characters, cached. It scans the narrow
+  // name index (migration 0014), not the titles table: seconds on D1 became milliseconds.
+  // INDEXED BY because without table statistics D1 picks an (indexable, ...) index instead.
   if (!inside || prefix.length >= 8 || !/^[\p{Script=Han}\p{N}]{2,}$/u.test(key)) return prefix;
   const contained = await cachedQuery(["search-inside", key, limit], [TAG.catalog], 3600, async () => (await getDb()).all<TitleCard>(
-    `SELECT ${CARD_COLUMNS} ${CARD_JOIN} WHERE t.indexable = 1 AND t.name LIKE ? ORDER BY t.popularity DESC LIMIT ?`,
+    `SELECT ${CARD_COLUMNS} ${CARD_JOIN}
+     WHERE t.id IN (SELECT id FROM titles INDEXED BY ix_titles_name_search WHERE indexable = 1 AND name LIKE ? ORDER BY popularity DESC LIMIT ?)
+     ORDER BY t.popularity DESC`,
     [`%${key}%`, limit],
   ));
   const seen = new Set(prefix.map((t) => t.id));
