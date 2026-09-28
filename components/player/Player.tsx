@@ -298,6 +298,8 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     const source = player.getPlugin("kpSource") as HlsSource | null;
     void source?.load(episode.url).then((mode) => {
       if (mode === "unsupported") setError("当前浏览器不支持 HLS 播放，请换用 Chrome、Edge 或 Safari。");
+      // iOS loads nothing until asked to play: start now, onReady still applies the start position.
+      if (mode === "native") void Promise.resolve(player.play()).catch(() => undefined);
     });
 
     return () => {
@@ -381,8 +383,9 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
       const decoding = nowFrames !== frames;
       frames = nowFrames;
       clock = video.currentTime;
-      const watching =
-        document.visibilityState === "visible" && !video.paused && !video.seeking && video.readyState >= 3 && video.videoWidth > 0 && document.pictureInPictureElement !== video;
+      // Not while the picture is elsewhere: picture-in-picture, or AirPlay (the phone decodes nothing).
+      const elsewhere = document.pictureInPictureElement === video || (video as HTMLVideoElement & { webkitCurrentPlaybackTargetIsWireless?: boolean }).webkitCurrentPlaybackTargetIsWireless === true;
+      const watching = document.visibilityState === "visible" && !video.paused && !video.seeking && video.readyState >= 3 && video.videoWidth > 0 && !elsewhere;
       frozenFor = watching && !decoding && advanced > 0.3 ? frozenFor + 1 : 0;
       if (frozenFor >= 2 && fixes < 3 && Date.now() - lastFix > 10_000) {
         fixes++;

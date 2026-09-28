@@ -1,5 +1,5 @@
 import type Hls from "hls.js";
-import { BasePlugin, langZhCn, Plugin, SimplePlayer, Sniffer, type IBasePluginOptions } from "xgplayer";
+import { BasePlugin, Events, langZhCn, Plugin, SimplePlayer, Sniffer, type IBasePluginOptions } from "xgplayer";
 import CssFullScreen from "xgplayer/es/plugins/cssFullScreen";
 import Enter from "xgplayer/es/plugins/enter";
 import Fullscreen from "xgplayer/es/plugins/fullscreen";
@@ -24,16 +24,27 @@ import { hlsConfig } from "./hls-config";
  * which also brings plugins that break our playback rules:
  * - gapJump / waitingTimeoutJump seek forward on stalls (the "nudge" that turns a slow line
  *   into a rebuffer loop; recovery here is only a line switch),
- * - dynamicBg paints frames to a canvas, rotate fullscreen transforms the player,
+ * - dynamicBg paints frames to a canvas,
  * - its hls.js plugin retries a dead line forever instead of failing over.
+ * Its rotate fullscreen is used on iPhones only (see fullscreenMode), never on computers, where a
+ * transformed video in fullscreen goes black.
  */
 
 export type LoadMode = "hls" | "native" | "unsupported";
 
+/** Apple's browsers play HLS themselves; only that playback can go to AirPlay. */
+function prefersNativeHls(media: HTMLVideoElement): boolean {
+  return /Apple/.test(navigator.vendor) && media.canPlayType("application/vnd.apple.mpegurl") !== "";
+}
+
+/** A native load that has not reached its first frame this long after playing started is dead. */
+const NATIVE_START_TIMEOUT = 25_000;
+
 /**
  * Loads each episode into the player's one <video>, so switching episode or line keeps the
- * player (and fullscreen). Fatal errors, after hls.js's own retries and one media recovery,
- * go to `onFatal`, which reports the line and fails over.
+ * player (and fullscreen). Apple devices use their own HLS playback (AirPlay, less battery);
+ * others use hls.js. Fatal errors, after hls.js's own retries and one media recovery, or a
+ * native load that never starts, go to `onFatal`, which reports the line and fails over.
  */
 export class HlsSource extends BasePlugin {
   static get pluginName() {
@@ -62,6 +73,14 @@ export class HlsSource extends BasePlugin {
     this.hls?.destroy();
     this.hls = null;
     const media = this.player.media as HTMLVideoElement;
+    if (prefersNativeHls(media)) {
+      media.src = url; // errors surface on the element (Player.tsx)
+      // Only while playback is wanted: a paused element (autoplay refused) loads nothing yet.
+      window.setTimeout(() => {
+        if (generation === this.generation && !media.paused && media.readyState < 3) this.config.onFatal?.("native-timeout");
+      }, NATIVE_START_TIMEOUT);
+      return "native";
+    }
     const { default: HlsCtor } = await import("hls.js");
     if (generation !== this.generation) return null; // a newer load or destroy came first
     if (HlsCtor.isSupported()) {
@@ -262,6 +281,101 @@ function fullscreenMode() {
   return {};
 }
 
+const LOCK_OPEN = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 6.8-1.2" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.4" fill="#fff"/></svg>`;
+const LOCK_CLOSED = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="#fff"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="15.5" r="1.4" fill="#141416"/></svg>`;
+
+/**
+ * Screen lock for phone fullscreen (left edge): hides every control and turns off swipes,
+ * double tap and long press, so the picture survives a viewer lying down with it. A tap then
+ * only shows the lock; leaving fullscreen unlocks.
+ */
+export class LockButton extends Plugin {
+  static get pluginName() {
+    return "kpLock";
+  }
+
+  static get defaultConfig() {
+    // On the player itself, not in xgplayer's left bar: in the turned iPhone player, iOS gave
+    // taps on the icon to the bar instead.
+    return { position: Plugin.POSITIONS.ROOT, index: 0 };
+  }
+
+  private locked = false;
+
+  afterCreate() {
+    this.bind(tap(), (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.setLocked(!this.locked);
+      this.player.focus();
+    });
+    // Double tap would pause: not while locked (xgplayer skips the action when a hook returns false).
+    this.player.getPlugin("mobile")?.useHooks("videoDbClick", () => !this.locked);
+    this.on(Events.FULLSCREEN_CHANGE, (full: boolean) => {
+      if (!full) this.setLocked(false);
+    });
+  }
+
+  setLocked(locked: boolean) {
+    this.locked = locked;
+    this.player.root?.classList.toggle("kp-locked", locked);
+    const mobile = this.player.getPlugin("mobile");
+    if (mobile) {
+      mobile.config.disableGesture = locked;
+      mobile.config.disablePress = locked;
+    }
+    const icon = this.find(".xgplayer-icon");
+    if (icon) icon.innerHTML = locked ? LOCK_CLOSED : LOCK_OPEN;
+    this.root?.setAttribute("aria-label", locked ? "解锁屏幕" : "锁定屏幕");
+  }
+
+  render() {
+    return `<xg-icon class="kp-lock" aria-label="锁定屏幕"><div class="xgplayer-icon">${LOCK_OPEN}</div></xg-icon>`;
+  }
+}
+
+type AirPlayVideo = HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void; webkitCurrentPlaybackTargetIsWireless?: boolean };
+
+/** 投屏 (top right): AirPlay, shown only while Safari reports a receiver on the network. */
+export class CastButton extends Plugin {
+  static get pluginName() {
+    return "kpCast";
+  }
+
+  static get defaultConfig() {
+    return { position: Plugin.POSITIONS.ROOT_TOP, index: 2 };
+  }
+
+  private stop: (() => void) | null = null;
+
+  afterCreate() {
+    const media = this.player.media as AirPlayVideo;
+    media.setAttribute("x-webkit-airplay", "allow");
+    this.hide();
+    const onAvailability = (e: Event) => {
+      if ((e as Event & { availability?: string }).availability === "available") this.show();
+      else this.hide();
+    };
+    media.addEventListener("webkitplaybacktargetavailabilitychanged", onAvailability);
+    this.stop = () => media.removeEventListener("webkitplaybacktargetavailabilitychanged", onAvailability);
+    this.bind(tap(), (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      media.webkitShowPlaybackTargetPicker?.();
+    });
+  }
+
+  destroy() {
+    this.stop?.();
+  }
+
+  render() {
+    return `<xg-icon class="kp-cast" aria-label="投屏">
+      <div class="xgplayer-icon"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M8 20h8" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><text x="12" y="13.6" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">TV</text></svg></div>
+    </xg-icon>`;
+  }
+}
+
 export function createPlayer(options: {
   el: HTMLElement;
   url: string;
@@ -304,6 +418,7 @@ export function createPlayer(options: {
       NextButton,
       EpisodesButton,
       TitleBar,
+      CastButton,
       PlaybackRate,
       Fullscreen,
       Poster,
@@ -312,7 +427,7 @@ export function createPlayer(options: {
       Enter,
       // Phones: volume is on the hardware buttons and the swipe gesture; the room goes to the
       // progress bar.
-      ...(mobile ? [MobilePlugin] : [Volume, PIP, Keyboard, PCPlugin, CssFullScreen]),
+      ...(mobile ? [MobilePlugin, LockButton] : [Volume, PIP, Keyboard, PCPlugin, CssFullScreen]),
     ],
     play: { index: 2 },
     time: { index: 5 },
