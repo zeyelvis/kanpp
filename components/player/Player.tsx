@@ -34,6 +34,9 @@ interface Props {
 const RANGE = 50;
 const AD_INTRO_SECONDS = 18;
 const AUTONEXT_SECONDS = 5;
+/** Holding → longer than this plays at HOLD_RATE (a shorter press skips 10 s). */
+const HOLD_MS = 300;
+const HOLD_RATE = 5;
 
 function EpisodeGrid({ episodes, current, onPick, dense = false }: { episodes: { name: string }[]; current: number; onPick: (i: number) => void; dense?: boolean }) {
   const ranges = episodes.length > 60 ? Math.ceil(episodes.length / RANGE) : 1;
@@ -121,6 +124,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   const [inAdIntro, setInAdIntro] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [drawer, setDrawer] = useState(false);
+  const [holding, setHolding] = useState(false);
   // Client-only component (rendered after the lines load), so storage can be read directly.
   const [rate, setRate] = useState(loadRate);
   const [marks, setMarks] = useState<SkipMarks>(() => loadSkip(title.id));
@@ -237,6 +241,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     player.on(Events.CSS_FULLSCREEN_CHANGE, onFullscreen);
     return () => {
       setLayer(null);
+      overlay.remove();
       playerRef.current = null;
       videoRef.current = null;
       player.destroy();
@@ -430,6 +435,55 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     return () => window.removeEventListener("keydown", onKey);
   }, [goEpisode, epIndex, hasNext]);
 
+  // →: a tap skips 10 s; held down it plays at 5x until released (the speed is not remembered).
+  useEffect(() => {
+    let timer: number | null = null;
+    let heldFrom: number | null = null; // the speed before the hold
+    const typing = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      return Boolean(target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)));
+    };
+    const release = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = null;
+      const video = videoRef.current;
+      if (heldFrom != null && video) video.playbackRate = heldFrom;
+      heldFrom = null;
+      setHolding(false);
+    };
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowRight" || typing(e) || e.metaKey || e.ctrlKey || e.altKey || !videoRef.current) return;
+      e.preventDefault();
+      if (e.repeat || timer != null || heldFrom != null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        const video = videoRef.current;
+        if (!video) return;
+        heldFrom = video.playbackRate;
+        video.playbackRate = HOLD_RATE;
+        setHolding(true);
+      }, HOLD_MS);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowRight") return;
+      const video = videoRef.current;
+      if (timer != null && video) {
+        // A tap: skip ahead.
+        video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
+      }
+      release();
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", release);
+    return () => {
+      release();
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", release);
+    };
+  }, []);
+
   const updateMarks = (next: SkipMarks, message: string) => {
     setMarks(next);
     saveSkip(title.id, next);
@@ -523,6 +577,11 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+      {holding ? (
+        <div className="absolute inset-x-0 top-4 flex justify-center" style={{ pointerEvents: "none" }}>
+          <span className="rounded-full bg-black/75 px-3 py-1 text-sm text-white">▶▶ {HOLD_RATE} 倍速快进中</span>
         </div>
       ) : null}
       {error ? <div className="absolute inset-0 grid place-items-center bg-black/85 p-6 text-center text-sm text-ink">{error}</div> : null}
@@ -663,7 +722,7 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
             <EpisodeGrid key={`${season}-${line.sourceId}`} episodes={line.episodes} current={epIndex} onPick={goEpisode} />
           </div>
         ) : null}
-        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒 · ↑ ↓ 音量 · &lt; &gt; 调倍速 · F 全屏 · N 下一集</p>
+        <p className="hidden text-xs text-faint lg:block">快捷键：空格 暂停 · ← → 快退快进 10 秒（按住 → {HOLD_RATE} 倍速） · ↑ ↓ 音量 · &lt; &gt; 调倍速 · F 全屏 · N 下一集</p>
       </div>
     </div>
   );

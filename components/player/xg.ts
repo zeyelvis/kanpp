@@ -188,7 +188,8 @@ export function createPlayer(options: {
       ...(mobile ? [MobilePlugin] : [Volume, PIP, Keyboard, PCPlugin, CssFullScreen]),
     ],
     pip: { showIcon: true },
-    keyboard: { seekStep: 10 },
+    // → is ours (Player.tsx): its press-and-hold would first seek 10 s, then speed up.
+    keyboard: { seekStep: 10, keyCodeMap: { right: { disable: true } } },
     // Swipe to seek, volume and brightness; long press plays at 2x.
     mobile: { disablePress: false, pressRate: 2 },
     kpSource: { mobile: options.mobileBuffer, onFatal: options.onFatal },
