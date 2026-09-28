@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { countWatched, dismissInstall, inAppBrowser, installOfferQuiet, isAppleTouch, promptInstall, useInstallPath, WATCHED_EVENT } from "@/lib/client/install";
 
-/** Safari's share glyph, drawn so the steps point at the right button. */
+/** Safari's share (共享) glyph, drawn so the steps point at the right button. */
 function ShareIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="inline-block -translate-y-px align-middle">
@@ -20,10 +20,12 @@ export function IosSteps() {
   return (
     <ol className="space-y-1.5 text-sm">
       <li>
-        1. 点 Safari 底部的「分享」<ShareIcon />
-        <span className="text-faint">（新版 iOS 在右下角「···」里）</span>
+        1. 点 Safari 底部的「共享」<ShareIcon />
+        <span className="text-faint">（新版 iOS 先点右下角「···」）</span>
       </li>
-      <li>2. 选「添加到主屏幕」，点「添加」</li>
+      <li>
+        2. 选「添加到主屏幕」，点「添加」<span className="text-faint">（新版 iOS 在「查看更多」里）</span>
+      </li>
       <li>3. 以后从桌面上的看片片图标打开</li>
     </ol>
   );

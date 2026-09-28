@@ -54,7 +54,7 @@ export function PushToggle({ prompt = false }: { prompt?: boolean }) {
   return (
     <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-surface/60 px-4 py-3 text-sm ring-1 ring-line">
       {support === "ios-install" ? (
-        <p className="text-muted">想在 iPhone、iPad 上收到新集提醒：先在 Safari 里点「分享 → 添加到主屏幕」，再从主屏幕打开看片片，回到这里开启。</p>
+        <p className="text-muted">想在 iPhone、iPad 上收到新集提醒：先在 Safari 里点「共享 → 添加到主屏幕」，再从主屏幕打开看片片，回到这里开启。</p>
       ) : blocked ? (
         <p className="text-muted">这个浏览器关闭了 kanpp.tv 的通知权限。在浏览器的网站设置里允许通知后，刷新本页即可开启更新提醒。</p>
       ) : on ? (
