@@ -353,6 +353,40 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
     };
   }, [saveProgress]);
 
+  /*
+   * Picture frozen while the sound plays on. Chrome stops decoding the video of a hidden page to
+   * save power and does not always restart it when the page is shown again (reproduced: back in
+   * front, the clock ran on, not one new frame). A seek to the current position restarts the
+   * decoder from the buffer, without moving playback. Not stall recovery: it runs only while the
+   * clock advances, so a slow line (clock stopped, buffering) never triggers it.
+   */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || typeof video.getVideoPlaybackQuality !== "function") return;
+    let frames = video.getVideoPlaybackQuality().totalVideoFrames;
+    let clock = video.currentTime;
+    let frozenFor = 0;
+    let fixes = 0;
+    let lastFix = 0;
+    const timer = window.setInterval(() => {
+      const nowFrames = video.getVideoPlaybackQuality().totalVideoFrames;
+      const advanced = video.currentTime - clock;
+      const decoding = nowFrames !== frames;
+      frames = nowFrames;
+      clock = video.currentTime;
+      const watching =
+        document.visibilityState === "visible" && !video.paused && !video.seeking && video.readyState >= 3 && video.videoWidth > 0 && document.pictureInPictureElement !== video;
+      frozenFor = watching && !decoding && advanced > 0.3 ? frozenFor + 1 : 0;
+      if (frozenFor >= 2 && fixes < 3 && Date.now() - lastFix > 10_000) {
+        fixes++;
+        lastFix = Date.now();
+        frozenFor = 0;
+        video.currentTime = video.currentTime;
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [episode?.url]);
+
   // Buffering state, the ad-intro window, the outro mark and the end of an episode.
   useEffect(() => {
     const video = videoRef.current;
