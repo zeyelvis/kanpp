@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Events, type SimplePlayer } from "xgplayer";
 import { FollowButton } from "@/components/library/FollowButton";
+import { site } from "@/lib/config/site";
 import { formatClock, lastWatched, recordHistory, useHistory, type TitleRef } from "@/lib/client/library";
 import { loadRate, loadSkip, saveRate, saveSkip } from "@/lib/client/player-prefs";
 import { inOutro, introMark, NO_MARKS, outroMark, RATES, startPosition, stepRate, type SkipMarks } from "@/lib/domain/skip";
 import { parseWatchState, type WatchState } from "@/lib/domain/slug";
+import { tmdbImage } from "@/lib/images";
 import { useHash, writeHash } from "./hash";
 import { isMobileClient } from "./hls-config";
 import { createPlayer, type HlsSource } from "./xg";
@@ -451,6 +453,38 @@ export function Player({ title, backdrop, lines, seasons, defaultSeason }: Props
   useEffect(() => {
     (playerRef.current?.getPlugin("kpTitle") as { setTitle(text: string): void } | null)?.setTitle(playingName);
   }, [playingName, layer]);
+
+  // Lock screen, Dynamic Island, Control Center and Android's notification: what is playing,
+  // with its poster, ±10 s and episode buttons.
+  useEffect(() => {
+    if (!layer || !("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    // Same origin as the page: iOS does not load cross-site artwork.
+    const poster = tmdbImage(title.poster, "w342");
+    const artwork = poster ? [{ src: new URL(poster, window.location.href).href, sizes: "342x513", type: "image/jpeg" }] : [];
+    session.metadata = new MediaMetadata({ title: playingName, artist: site.name, artwork });
+    const set = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // An action this browser does not know.
+      }
+    };
+    const skip = (seconds: number) => {
+      const video = videoRef.current;
+      if (video) video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + seconds));
+    };
+    set("play", () => void Promise.resolve(playerRef.current?.play()).catch(() => undefined));
+    set("pause", () => playerRef.current?.pause());
+    set("seekbackward", (d) => skip(-(d.seekOffset ?? 10)));
+    set("seekforward", (d) => skip(d.seekOffset ?? 10));
+    set("previoustrack", hasPrev ? () => goEpisode(epIndex - 1) : null);
+    set("nexttrack", hasNext ? () => goEpisode(epIndex + 1) : null);
+    return () => {
+      for (const action of ["play", "pause", "seekbackward", "seekforward", "previoustrack", "nexttrack"] as const) set(action, null);
+      session.metadata = null;
+    };
+  }, [layer, playingName, title.poster, hasPrev, hasNext, epIndex, goEpisode]);
 
   // While the player covers the page (phones, web fullscreen) the page under it must not scroll.
   useEffect(() => {

@@ -59,6 +59,7 @@ html.kp-player-full body {
 }
 .xgplayer .kp-top {
   flex: 1;
+  padding-right: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
